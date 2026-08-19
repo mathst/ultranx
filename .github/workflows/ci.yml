@@ -24,6 +24,9 @@ jobs:
 
   test:
     runs-on: ${{ matrix.os }}
+    # Teto global: sem ele, um mirror do apt pendurado deixa o job "rodando" por
+    # horas em vez de falhar — aconteceu, 50 min preso no apt-get update.
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -40,9 +43,11 @@ jobs:
         # libs mesmo sem abrir janela: sem elas o import falha com
         # "libEGL.so.1: cannot open shared object file".
         if: runner.os == 'Linux'
+        timeout-minutes: 6
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libegl1 libxkbcommon-x11-0 libgl1
+          sudo apt-get update -o Acquire::Retries=3
+          sudo apt-get install -y --no-install-recommends \
+            libegl1 libxkbcommon-x11-0 libgl1
       - name: Instalar dependências
         run: pip install -r requirements-dev.txt
       - name: Testes com cobertura

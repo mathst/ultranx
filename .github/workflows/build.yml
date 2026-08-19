@@ -34,9 +34,11 @@ jobs:
 
       - name: Dependências de sistema do Qt (Linux)
         if: runner.os == 'Linux'
+        timeout-minutes: 6
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libegl1 libxkbcommon-x11-0 libgl1
+          sudo apt-get update -o Acquire::Retries=3
+          sudo apt-get install -y --no-install-recommends \
+            libegl1 libxkbcommon-x11-0 libgl1
 
       - name: Build portátil (--noconsole)
         run: pyinstaller ultranx.spec --noconfirm
