@@ -78,6 +78,8 @@ def test_case_variants_are_protected(sd: Path):
         "bootloader",
         "switch",  # a pasta em si não é protegida: é limpa item a item
         "switch/tinfoil",
+        "config",
+        "config/sys-clk",
         "switch/daybreak.nro",
         "sept",
         "payload.bin",
@@ -91,8 +93,6 @@ def test_legacy_entries_are_not_protected(sd: Path, removable: str):
 @pytest.mark.parametrize(
     "protected",
     [
-        "config",
-        "config/sys-clk",
         "switch/JKSV",
         "switch/JKSV/backup.sav",
         "switch/EdiZon",
@@ -101,7 +101,7 @@ def test_legacy_entries_are_not_protected(sd: Path, removable: str):
     ],
 )
 def test_user_data_inside_removable_dirs_is_protected(sd: Path, protected: str):
-    """Keys, saves e configs não são repostos por nenhum pacote."""
+    """Keys e saves não são repostos por nenhum pacote."""
     assert is_protected(sd, sd / protected)
 
 
@@ -131,6 +131,7 @@ def test_build_plan_selects_only_legacy(sd: Path):
         "sept",
         "payload.bin",
         "packetversion.txt",
+        "config",
         # switch/ não é removida por inteiro: entram só os filhos descartáveis.
         "sub",
         "tinfoil",
@@ -145,7 +146,6 @@ def test_build_plan_selects_only_legacy(sd: Path):
         "mods2",
         "homebrew.nro",
         "minhapastacustom",
-        "config",
         "jksv",
         "edizon",
         "nx-activity-log",
@@ -172,7 +172,8 @@ def test_execute_plan_removes_and_preserves(sd: Path):
     assert (sd / "switch" / "prod.keys").exists()
     assert (sd / "switch" / "EdiZon").is_dir()
     assert (sd / "switch" / "NX-Activity-Log").is_dir()
-    assert (sd / "config" / "sys-clk" / "config.ini").exists()
+    # config/ é substituída pelo pacote: presets antigos não podem sobrar.
+    assert not (sd / "config").exists()
 
 
 def test_execute_plan_reports_progress(sd: Path):

@@ -61,6 +61,11 @@ O sanitizer varre o **primeiro nível** da raiz e desce um único nível extra n
 pastas de `PARTIAL_DELETE_DIRS`. Isso é deliberado: mantém a whitelist auditável
 a olho nu e limita o dano possível de um bug.
 
+A remoção existe porque sobrescrever não basta: o mesmo nome de arquivo pode
+carregar conteúdo de outra versão, e um órfão que o pacote novo não repõe segue
+sendo lido como válido. `config/` entra nessa categoria — é substituída inteira
+pelo pacote.
+
 `PARTIAL_DELETE_DIRS` existe porque `switch/` mistura, no mesmo lugar, apps que o
 pacote repõe e dado que ele não repõe (backups do JKSV, `*.keys`). Ela é limpa
 filho por filho, e o diretório em si permanece para a extração repovoar.

@@ -61,7 +61,6 @@ PRESERVE_DIRS: Final[frozenset[str]] = frozenset(
     {
         "nintendo",  # saves/jogos do sysNAND
         "emummc",  # partição do emuMMC
-        "config",  # configs de sys-modules e overlays do usuário
         "tico",  # contém tico/roms
         "mods2",  # mods do usuário
         "themes",  # contém themes/ThemezerNX
@@ -102,12 +101,15 @@ PRESERVE_ROOT_FILES: Final[frozenset[str]] = frozenset(
 )
 
 # --- Pastas legadas removidas antes da instalação ----------------------------
-# Causam conflito pós-atualização do Atmosphere quando sobrescritas por cima.
+# Sobrescrever por cima não basta: o mesmo nome de arquivo pode carregar conteúdo
+# de outra versão, e um órfão que o pacote novo não repõe continua sendo lido
+# como se fosse válido. Só a remoção garante que o que fica veio do pacote.
 DELETE_DIRS: Final[frozenset[str]] = frozenset(
     {
         "atmosphere",
         "bootloader",
         "switch",
+        "config",  # substituída pelo pacote; presets antigos causam conflito
         "sept",
         "warmboot_mariko",
         "stratosphere",
