@@ -57,8 +57,19 @@ Três camadas independentes, todas obrigatórias:
 3. **Revalidação na execução** — `execute_plan()` chama `is_protected()` de novo
    antes de cada remoção. Um plano adulterado não apaga nada protegido.
 
-O sanitizer só varre o **primeiro nível** da raiz. Isso é deliberado: mantém a
-whitelist auditável a olho nu e limita o dano possível de um bug.
+O sanitizer varre o **primeiro nível** da raiz e desce um único nível extra nas
+pastas de `PARTIAL_DELETE_DIRS`. Isso é deliberado: mantém a whitelist auditável
+a olho nu e limita o dano possível de um bug.
+
+`PARTIAL_DELETE_DIRS` existe porque `switch/` mistura, no mesmo lugar, apps que o
+pacote repõe e dado que ele não repõe (backups do JKSV, `*.keys`). Ela é limpa
+filho por filho, e o diretório em si permanece para a extração repovoar.
+
+Detalhe de implementação que é fácil quebrar: ser ancestral de um subcaminho
+protegido normalmente protege a pasta inteira (é o que segura `themes/` por causa
+de `themes/ThemezerNX`). Para as pastas de `PARTIAL_DELETE_DIRS` essa regra é
+suspensa de propósito — sem isso, `switch/` seria protegida por ser pai de
+`switch/JKSV` e a limpeza seletiva nunca aconteceria.
 
 ## Integridade do payload
 

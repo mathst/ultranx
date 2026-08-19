@@ -15,8 +15,15 @@ Sem banco de dados: o estado fica no próprio cartão, no arquivo
 2. **Compara versões** — lê o `packetVersion.txt` local e o publicado no servidor,
    e libera a escolha entre **Pacote Padrão** e **Pacote Completo (Android/Linux)**.
 3. **Limpa com whitelist estrita** — remove só as pastas de sistema legadas que
-   causam conflito. `Nintendo`, `emummc`, `tico/roms`, `themes/ThemezerNX`,
-   `mods2`, pastas de mods e binários standalone **nunca** são tocados.
+   causam conflito (`atmosphere`, `bootloader`, `sept`, `warmboot_mariko`,
+   `payload.bin`). `Nintendo`, `emummc`, `config`, `tico/roms`,
+   `themes/ThemezerNX`, `mods2`, pastas de mods e binários standalone **nunca**
+   são tocados.
+
+   `switch/` é limpa **item a item**, não removida por inteiro: os apps que o
+   pacote repõe saem, mas `switch/JKSV` (backups de saves), `switch/EdiZon`,
+   `switch/NX-Activity-Log` e qualquer `*.keys` ou `*.sav` ficam — perder esses
+   arquivos é irreversível e nenhum pacote os traz de volta.
 4. **Instala** — download em streaming com barra de progresso real, validação de
    SHA-256, extração sobre a raiz e gravação verificada do novo
    `packetVersion.txt`.

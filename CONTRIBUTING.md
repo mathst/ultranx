@@ -14,8 +14,9 @@ Cobertura mínima: **80%**. A camada `core/` não importa PyQt6 — mantenha ass
 ## Regra inviolável: a whitelist
 
 Qualquer mudança em `src/ultranx/config.py` (`PRESERVE_DIRS`, `PRESERVE_SUBPATHS`,
-`DELETE_DIRS`) ou em `src/ultranx/core/sanitizer.py` precisa vir com teste
-provando que nada protegido é removido. PRs que afrouxam a whitelist sem
+`PRESERVE_ANY_DEPTH_SUFFIXES`, `DELETE_DIRS`, `PARTIAL_DELETE_DIRS`) ou em
+`src/ultranx/core/sanitizer.py` precisa vir com teste provando que nada
+protegido é removido. PRs que afrouxam a whitelist sem
 justificativa técnica são recusados: um bug aqui apaga saves de gente real.
 
 Se propõe remover uma pasta nova, o PR deve responder:

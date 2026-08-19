@@ -32,6 +32,18 @@ def sd(tmp_path: Path) -> Path:
     (tmp_path / "mods2" / "jogo").mkdir(parents=True)
     (tmp_path / "MinhaPastaCustom").mkdir()
 
+    # Dentro de switch/: dado do usuário convive com apps que o pacote repõe.
+    (tmp_path / "switch" / "JKSV").mkdir(parents=True)
+    (tmp_path / "switch" / "JKSV" / "backup.sav").write_bytes(b"save")
+    (tmp_path / "switch" / "EdiZon").mkdir()
+    (tmp_path / "switch" / "NX-Activity-Log").mkdir()
+    (tmp_path / "switch" / "tinfoil").mkdir()
+    (tmp_path / "switch" / "prod.keys").write_text("chave", encoding="utf-8")
+    (tmp_path / "switch" / "daybreak.nro").write_bytes(b"app")
+
+    (tmp_path / "config" / "sys-clk").mkdir(parents=True)
+    (tmp_path / "config" / "sys-clk" / "config.ini").write_text("x", encoding="utf-8")
+
     (tmp_path / "payload.bin").write_bytes(b"payload")
     (tmp_path / "homebrew.nro").write_bytes(b"nro")
     (tmp_path / "packetVersion.txt").write_text("1.0.0\n", encoding="utf-8")
@@ -64,8 +76,9 @@ def test_case_variants_are_protected(sd: Path):
     [
         "atmosphere",
         "bootloader",
-        "switch",
-        "config",
+        "switch",  # a pasta em si não é protegida: é limpa item a item
+        "switch/tinfoil",
+        "switch/daybreak.nro",
         "sept",
         "payload.bin",
         "packetVersion.txt",
@@ -73,6 +86,28 @@ def test_case_variants_are_protected(sd: Path):
 )
 def test_legacy_entries_are_not_protected(sd: Path, removable: str):
     assert not is_protected(sd, sd / removable)
+
+
+@pytest.mark.parametrize(
+    "protected",
+    [
+        "config",
+        "config/sys-clk",
+        "switch/JKSV",
+        "switch/JKSV/backup.sav",
+        "switch/EdiZon",
+        "switch/NX-Activity-Log",
+        "switch/prod.keys",
+    ],
+)
+def test_user_data_inside_removable_dirs_is_protected(sd: Path, protected: str):
+    """Keys, saves e configs não são repostos por nenhum pacote."""
+    assert is_protected(sd, sd / protected)
+
+
+def test_keys_are_protected_at_any_depth(sd: Path):
+    assert is_protected(sd, sd / "switch" / "qualquer" / "title.keys")
+    assert is_protected(sd, sd / "atmosphere" / "fundo" / "prod.keys")
 
 
 def test_root_itself_is_protected(sd: Path):
@@ -93,11 +128,13 @@ def test_build_plan_selects_only_legacy(sd: Path):
     assert removed == {
         "atmosphere",
         "bootloader",
-        "switch",
-        "config",
         "sept",
         "payload.bin",
         "packetversion.txt",
+        # switch/ não é removida por inteiro: entram só os filhos descartáveis.
+        "sub",
+        "tinfoil",
+        "daybreak.nro",
     }
     preserved = {path.name.casefold() for path in plan.preserved}
     assert {
@@ -108,6 +145,11 @@ def test_build_plan_selects_only_legacy(sd: Path):
         "mods2",
         "homebrew.nro",
         "minhapastacustom",
+        "config",
+        "jksv",
+        "edizon",
+        "nx-activity-log",
+        "prod.keys",
     } <= preserved
 
 
@@ -118,10 +160,19 @@ def test_execute_plan_removes_and_preserves(sd: Path):
     assert len(removed) == len(plan.items)
     assert not (sd / "atmosphere").exists()
     assert not (sd / "payload.bin").exists()
+    assert not (sd / "switch" / "tinfoil").exists()
+    assert not (sd / "switch" / "daybreak.nro").exists()
     assert (sd / "Nintendo" / "Contents").is_dir()
     assert (sd / "tico" / "roms" / "jogo.gba").read_bytes() == b"rom"
     assert (sd / "themes" / "ThemezerNX" / "t.szs").exists()
     assert (sd / "homebrew.nro").exists()
+    # switch/ sobrevive, so perde o conteudo que o pacote repoe.
+    assert (sd / "switch").is_dir()
+    assert (sd / "switch" / "JKSV" / "backup.sav").read_bytes() == b"save"
+    assert (sd / "switch" / "prod.keys").exists()
+    assert (sd / "switch" / "EdiZon").is_dir()
+    assert (sd / "switch" / "NX-Activity-Log").is_dir()
+    assert (sd / "config" / "sys-clk" / "config.ini").exists()
 
 
 def test_execute_plan_reports_progress(sd: Path):

@@ -61,6 +61,7 @@ PRESERVE_DIRS: Final[frozenset[str]] = frozenset(
     {
         "nintendo",  # saves/jogos do sysNAND
         "emummc",  # partição do emuMMC
+        "config",  # configs de sys-modules e overlays do usuário
         "tico",  # contém tico/roms
         "mods2",  # mods do usuário
         "themes",  # contém themes/ThemezerNX
@@ -79,7 +80,15 @@ PRESERVE_SUBPATHS: Final[tuple[tuple[str, ...], ...]] = (
     ("tico", "roms"),
     ("themes", "themeznx"),
     ("themes", "themezernx"),
+    # Dentro de switch/ há dado do usuário que o pacote não repõe.
+    ("switch", "jksv"),  # backups de saves
+    ("switch", "edizon"),  # editor de saves e seus dados
+    ("switch", "nx-activity-log"),  # estatísticas de jogo
 )
+
+# Extensões preservadas em QUALQUER profundidade: perder estes arquivos é
+# irreversível e nenhum pacote os repõe.
+PRESERVE_ANY_DEPTH_SUFFIXES: Final[frozenset[str]] = frozenset({".keys", ".sav"})
 
 # Arquivos soltos na raiz preservados (binários standalone do usuário).
 PRESERVE_ROOT_FILE_SUFFIXES: Final[frozenset[str]] = frozenset(
@@ -99,12 +108,16 @@ DELETE_DIRS: Final[frozenset[str]] = frozenset(
         "atmosphere",
         "bootloader",
         "switch",
-        "config",
         "sept",
         "warmboot_mariko",
         "stratosphere",
     }
 )
+
+# Pastas limpas item a item em vez de removidas por inteiro, porque contêm
+# subcaminhos protegidos (ver PRESERVE_SUBPATHS). O diretório em si permanece; a
+# extração do pacote o repovoa.
+PARTIAL_DELETE_DIRS: Final[frozenset[str]] = frozenset({"switch"})
 
 # Arquivos de raiz removidos (regravados pelo pacote novo).
 DELETE_ROOT_FILES: Final[frozenset[str]] = frozenset(
