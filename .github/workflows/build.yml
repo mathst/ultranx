@@ -1,3 +1,4 @@
+# Build portátil (PyInstaller --noconsole) para Windows e Linux.
 name: Build
 
 on:
