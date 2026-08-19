@@ -37,7 +37,15 @@ analysis = Analysis(
     pathex=[str(Path("src"))],
     binaries=[],
     datas=[],
-    hiddenimports=["ultranx", "ultranx.ui.main_window"],
+    hiddenimports=[
+        "ultranx",
+        "ultranx.ui.main_window",
+        # py7zr carrega os codecs por nome; a analise estatica nao os ve.
+        "py7zr",
+        "_lzma",
+        "bz2",
+        "zlib",
+    ],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

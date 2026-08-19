@@ -20,6 +20,7 @@ uma flag; as funções de core a consultam entre chunks/entradas. Nunca usamos
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from datetime import date
 from pathlib import Path
 
@@ -60,7 +61,7 @@ class UpdateWorker(QThread):
     def __init__(
         self,
         sd_root: Path,
-        package: PackageInfo,
+        packages: Sequence[PackageInfo],
         version: str,
         settings: Settings,
         released: date | None = None,
@@ -68,7 +69,7 @@ class UpdateWorker(QThread):
     ) -> None:
         super().__init__(parent)
         self._sd_root = Path(sd_root)
-        self._package = package
+        self._packages = tuple(packages)
         self._version = version
         self._released = released
         self._settings = settings
@@ -119,6 +120,14 @@ class UpdateWorker(QThread):
             detail += f" — restam {format_duration(eta)}"
         self.progress_changed.emit(percent, detail)
 
+    def _on_archive_start(self, index: int, total: int, name: str) -> None:
+        # Cada arquivo tem vazão própria: reiniciar os estimadores evita que a
+        # média do anterior contamine a estimativa do seguinte.
+        self._download_eta.reset()
+        self._extract_eta.reset()
+        prefix = f"[{index}/{total}] " if total > 1 else ""
+        self._set_stage("download", f"{prefix}Baixando {name}…")
+
     def _on_extract(self, index: int, total: int, name: str) -> None:
         fraction = index / total if total else 1.0
         eta = self._extract_eta.update(index, total)
@@ -153,6 +162,11 @@ class UpdateWorker(QThread):
                 self._sd_root,
             )
 
+        # Espaço conferido ANTES da limpeza: descobrir que o cartão encheu
+        # depois de apagar as pastas antigas deixa o SD sem as duas versões.
+        self._set_stage("verificação", "Conferindo espaço no cartão…")
+        installer.ensure_space(self._sd_root, self._packages)
+
         # 1. Limpeza seletiva
         self._set_stage("limpeza", "Limpando pastas de sistema legadas…")
         plan = sanitizer.build_plan(self._sd_root)
@@ -164,8 +178,8 @@ class UpdateWorker(QThread):
         # 2–4. Download, extração e gravação de versão
         self._set_stage("download", "Baixando o pacote…")
         self._guard_media()
-        result: InstallResult = installer.install_payload(
-            package=self._package,
+        result: InstallResult = installer.install_packages(
+            packages=self._packages,
             version=self._version,
             sd_root=self._sd_root,
             settings=self._settings,
@@ -173,6 +187,7 @@ class UpdateWorker(QThread):
             download_progress=self._on_download,
             extract_progress=self._on_extract,
             should_cancel=self._should_cancel,
+            on_archive_start=self._on_archive_start,
         )
 
         # 5. Finalização

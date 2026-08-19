@@ -24,7 +24,9 @@ from ..config import (
     MODALITY_STANDARD,
     Settings,
 )
-from .dates import parse_http_date, parse_iso_date
+from . import mediafire
+from .archives import supported_suffixes
+from .dates import parse_http_date, parse_iso_date, to_iso
 from .drive_detector import LocalState, read_local_state
 from .errors import NetworkError, RemoteDataError
 
@@ -37,12 +39,24 @@ _MAX_TEXT_BYTES = 64 * 1024  # protege contra resposta gigante em endpoint errad
 
 @dataclass(frozen=True, slots=True)
 class PackageInfo:
-    """Metadados de uma modalidade de pacote."""
+    """Um arquivo a instalar, dentro de uma modalidade.
+
+    Uma modalidade pode ter vários arquivos: "Pacote Completo" é o pacote base
+    mais os extras de Android/Linux. ``url`` vazia significa link resolvido na
+    hora do download a partir de ``quickkey`` (caso do MediaFire, cujo link
+    direto é temporário).
+    """
 
     modality: str
     url: str
     sha256: str | None
     size_bytes: int | None
+    name: str = ""
+    quickkey: str | None = None
+
+    @property
+    def label(self) -> str:
+        return self.name or self.url.rsplit("/", 1)[-1] or self.modality
 
 
 @dataclass(frozen=True, slots=True)
@@ -78,17 +92,34 @@ class VersionReport:
         return compare_versions(self.remote_version, self.local.version) < 0
 
     def package_for(self, modality: str) -> PackageInfo:
-        for package in self.packages:
-            if package.modality == modality:
-                return package
-        raise RemoteDataError(
-            f"Modalidade '{modality}' não está disponível na versão "
-            f"{self.remote_version}."
-        )
+        """Primeiro arquivo da modalidade. Atalho para quem só tem um."""
+        return self.packages_for(modality)[0]
+
+    def packages_for(self, modality: str) -> tuple[PackageInfo, ...]:
+        """Todos os arquivos da modalidade, na ordem de instalação."""
+        packages = tuple(p for p in self.packages if p.modality == modality)
+        if not packages:
+            raise RemoteDataError(
+                f"Modalidade '{modality}' não está disponível na versão "
+                f"{self.remote_version}."
+            )
+        return packages
+
+    def total_bytes_for(self, modality: str) -> int | None:
+        """Soma dos tamanhos da modalidade; ``None`` se algum for desconhecido."""
+        sizes = [p.size_bytes for p in self.packages_for(modality)]
+        if any(size is None for size in sizes):
+            return None
+        return sum(size for size in sizes if size is not None)
 
     @property
     def available_modalities(self) -> tuple[str, ...]:
-        return tuple(package.modality for package in self.packages)
+        """Modalidades sem repetição, preservando a ordem de descoberta."""
+        seen: list[str] = []
+        for package in self.packages:
+            if package.modality not in seen:
+                seen.append(package.modality)
+        return tuple(seen)
 
 
 def _version_key(version: str) -> tuple[object, ...]:
@@ -240,8 +271,90 @@ def fetch_manifest(
     return tuple(parsed), released
 
 
+def _has_supported_suffix(filename: str) -> bool:
+    lowered = filename.casefold()
+    return any(lowered.endswith(suffix) for suffix in supported_suffixes())
+
+
+def _to_package(modality: str, item: mediafire.MediaFireFile) -> PackageInfo:
+    return PackageInfo(
+        modality=modality,
+        url="",  # resolvido na hora do download: o link do MediaFire expira
+        sha256=item.sha256,
+        size_bytes=item.size_bytes,
+        name=item.filename,
+        quickkey=item.quickkey,
+    )
+
+
+def inspect_mediafire(sd_root: Path, settings: Settings) -> VersionReport:
+    """Monta o relatório a partir de uma pasta pública do MediaFire.
+
+    A pasta é a fonte de verdade: não há ``packetVersion.txt`` remoto nem
+    ``manifest.json``. A versão publicada é a data de criação do arquivo mais
+    recente e o SHA-256 vem da própria API — integridade sem manter manifest.
+
+    As modalidades saem da estrutura da pasta: os arquivos da raiz formam o
+    Pacote Padrão; a raiz mais o conteúdo das subpastas ("Extra Opcional -
+    Android&Linux") forma o Pacote Completo.
+    """
+    folder_key = mediafire.parse_folder_key(settings.base_url)
+    root = mediafire.list_folder(folder_key, settings)
+
+    base_files = [f for f in root.files if _has_supported_suffix(f.filename)]
+    if not base_files:
+        raise RemoteDataError(
+            "A pasta do MediaFire não tem nenhum pacote .7z ou .zip na raiz."
+        )
+
+    extra_files: list[mediafire.MediaFireFile] = []
+    for name, key in root.subfolders:
+        if not key:
+            continue
+        logger.info("Lendo subpasta de extras: %s", name)
+        extra_files.extend(
+            item
+            for item in mediafire.list_folder(key, settings).files
+            if _has_supported_suffix(item.filename)
+        )
+
+    # O SHA-256 só vem em get_info; são poucos arquivos, então vale a chamada.
+    detailed = {
+        item.quickkey: mediafire.file_details(item.quickkey, settings)
+        for item in (*base_files, *extra_files)
+    }
+    base = [detailed[item.quickkey] for item in base_files]
+    extras = [detailed[item.quickkey] for item in extra_files]
+
+    packages = [_to_package(MODALITY_STANDARD, item) for item in base]
+    if extras:
+        packages += [_to_package(MODALITY_FULL, item) for item in (*base, *extras)]
+
+    dates = [item.created for item in (*base, *extras) if item.created is not None]
+    released = max(dates) if dates else None
+    version = to_iso(released) or "desconhecida"
+
+    report = VersionReport(
+        local=read_local_state(sd_root),
+        remote_version=version,
+        remote_released=released,
+        packages=tuple(packages),
+        manifest_available=True,  # a API entrega hash e data
+    )
+    logger.info(
+        "MediaFire: versão %s, %d arquivo(s) base, %d extra(s).",
+        version,
+        len(base),
+        len(extras),
+    )
+    return report
+
+
 def inspect(sd_root: Path, settings: Settings) -> VersionReport:
     """Executa a inspeção completa. Chamado de dentro de uma ``QThread``."""
+    if mediafire.is_mediafire_url(settings.base_url):
+        return inspect_mediafire(sd_root, settings)
+
     remote_version, published_at = fetch_remote_version(settings)
     packages, released = fetch_manifest(settings, remote_version)
     manifest_available = bool(packages)

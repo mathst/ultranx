@@ -15,10 +15,8 @@ from __future__ import annotations
 import hashlib
 import logging
 import os
-import shutil
 import tempfile
-import zipfile
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
@@ -26,6 +24,8 @@ from pathlib import Path
 import requests
 
 from ..config import DOWNLOAD_CHUNK_SIZE, VERSION_FILE_NAME, Settings
+from . import mediafire
+from .archives import ExtractProgress, extract_archive, free_bytes
 from .dates import to_iso
 from .errors import (
     DriveDisconnectedError,
@@ -35,19 +35,21 @@ from .errors import (
     OperationCancelled,
     PermissionDeniedError,
 )
-from .paths import human_size, join_within, safe_resolve
+from .paths import human_size, safe_resolve
 from .version_inspector import PackageInfo
 
 logger = logging.getLogger(__name__)
 
 # (bytes_recebidos, bytes_totais_ou_None)
 DownloadProgress = Callable[[int, int | None], None]
-# (entradas_extraidas, entradas_totais, nome_atual)
-ExtractProgress = Callable[[int, int, str], None]
 CancelCheck = Callable[[], bool]
+# (indice_do_arquivo, total_de_arquivos, nome)
+ArchiveStart = Callable[[int, int, str], None]
 
 _TEMP_PREFIX = "ultranx-payload-"
-_SAFETY_MARGIN = 1.15  # ZIP + extração convivem no mesmo cartão
+_SAFETY_MARGIN = 1.15  # o pacote e a extração convivem no mesmo cartão
+# Folga sobre o tamanho comprimido: 7z de pacote de Switch expande ~1,6x.
+_EXTRACTED_RATIO = 2.6
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,22 +61,14 @@ class InstallResult:
     modality: str
     extracted_entries: int
     payload_bytes: int
-
-
-def _free_bytes(path: Path) -> int:
-    """Espaço livre em bytes; ``0`` quando indeterminável (força fallback)."""
-    try:
-        return int(shutil.disk_usage(str(path)).free)
-    except (OSError, ValueError):
-        logger.debug("disk_usage indisponível para %s", path)
-        return 0
+    archives: int = 1
 
 
 def _choose_temp_dir(sd_root: Path, expected_size: int | None) -> Path:
     """Prefere o próprio SD; cai para o temp do sistema se faltar espaço."""
     root = safe_resolve(sd_root)
     needed = int((expected_size or 0) * _SAFETY_MARGIN)
-    if expected_size is None or _free_bytes(root) > needed:
+    if expected_size is None or free_bytes(root) > needed:
         return root
     logger.info(
         "Espaço insuficiente no SD para o temporário (%s necessários); usando %s.",
@@ -97,9 +91,11 @@ def download_payload(
     por remover o temporário (ver :func:`install_payload`, que já faz isso).
     """
     temp_dir = _choose_temp_dir(sd_root, package.size_bytes)
+    download_url = resolve_url(package, settings)
+    suffix = Path(package.label).suffix.casefold() or ".zip"
     try:
         handle, temp_name = tempfile.mkstemp(
-            prefix=_TEMP_PREFIX, suffix=".zip", dir=str(temp_dir)
+            prefix=_TEMP_PREFIX, suffix=suffix, dir=str(temp_dir)
         )
     except (OSError, PermissionError) as exc:
         raise PermissionDeniedError(
@@ -112,7 +108,7 @@ def download_payload(
 
     try:
         with requests.get(
-            package.url, stream=True, timeout=settings.http_timeout
+            download_url, stream=True, timeout=settings.http_timeout
         ) as response:
             response.raise_for_status()
             declared = response.headers.get("Content-Length")
@@ -162,7 +158,7 @@ def download_payload(
         raise InstallError(f"Falha de I/O durante o download: {exc}.") from exc
 
     _verify_integrity(package, digest.hexdigest(), received, settings, temp_path)
-    logger.info("Download concluído: %s (%s).", package.url, human_size(received))
+    logger.info("Download concluído: %s (%s).", package.label, human_size(received))
     return temp_path, received
 
 
@@ -183,8 +179,8 @@ def _verify_integrity(
 
     if package.sha256 is None:
         logger.warning(
-            "Pacote sem sha256 no manifest — integridade NÃO verificada para %s.",
-            package.url,
+            "Pacote sem sha256 — integridade NÃO verificada para %s.",
+            package.label,
         )
         return
 
@@ -208,72 +204,54 @@ def _discard(path: Path) -> None:
         logger.warning("Não foi possível remover o temporário %s: %s", path, exc)
 
 
+def resolve_url(package: PackageInfo, settings: Settings) -> str:
+    """Devolve a URL de download do pacote.
+
+    Pacote sem ``url`` traz ``quickkey``: o link é resolvido agora, não na
+    inspeção, porque o link direto do MediaFire é temporário e pode expirar
+    entre "verificar atualização" e "atualizar cartão".
+    """
+    if package.url:
+        return package.url
+    if not package.quickkey:
+        raise InstallError(
+            f"O pacote '{package.label}' não tem URL nem identificador para "
+            "resolver o download."
+        )
+    return mediafire.resolve_download_url(package.quickkey, settings)
+
+
 def extract_payload(
     archive_path: Path,
     sd_root: Path,
     progress: ExtractProgress | None = None,
     should_cancel: CancelCheck | None = None,
 ) -> int:
-    """Extrai o ZIP sobre a raiz do SD, sobrescrevendo o que colidir.
+    """Extrai o pacote sobre a raiz do SD. Aceita ``.7z`` e ``.zip``."""
+    return extract_archive(archive_path, sd_root, progress, should_cancel)
 
-    Cada entrada passa por :func:`~ultranx.core.paths.join_within`; entradas que
-    escapariam da raiz (zip-slip) são descartadas com log em WARNING. Retorna o
-    número de entradas gravadas.
+
+def ensure_space(sd_root: Path, packages: Sequence[PackageInfo]) -> None:
+    """Verifica espaço antes de apagar ou baixar qualquer coisa.
+
+    Descobrir no meio da extração que o cartão encheu é o pior momento possível:
+    o SD já está sem as pastas antigas e sem as novas. A conta considera o pacote
+    comprimido e o conteúdo extraído convivendo no cartão.
     """
-    root = safe_resolve(sd_root)
-    written = 0
+    sizes = [p.size_bytes for p in packages if p.size_bytes]
+    if not sizes:
+        return
 
-    try:
-        with zipfile.ZipFile(archive_path) as archive:
-            entries = [item for item in archive.infolist() if item.filename]
-            total = len(entries)
-            if total == 0:
-                raise InstallError("O pacote baixado está vazio.")
-
-            for index, entry in enumerate(entries, start=1):
-                if should_cancel is not None and should_cancel():
-                    raise OperationCancelled("Extração cancelada pelo usuário.")
-
-                target = join_within(root, entry.filename)
-                if target is None:
-                    logger.warning(
-                        "GUARD: entrada '%s' fora da raiz; descartada.", entry.filename
-                    )
-                    continue
-
-                if entry.is_dir():
-                    target.mkdir(parents=True, exist_ok=True)
-                    continue
-
-                target.parent.mkdir(parents=True, exist_ok=True)
-                with archive.open(entry) as source, target.open("wb") as sink:
-                    while block := source.read(DOWNLOAD_CHUNK_SIZE):
-                        sink.write(block)
-                written += 1
-
-                if progress is not None:
-                    progress(index, total, entry.filename)
-    except zipfile.BadZipFile as exc:
-        raise IntegrityError("O pacote baixado não é um ZIP válido.") from exc
-    except OperationCancelled:
-        raise
-    except PermissionError as exc:
-        raise PermissionDeniedError(
-            "Sem permissão de escrita ao extrair o pacote no cartão."
-        ) from exc
-    except FileNotFoundError as exc:
-        raise DriveDisconnectedError(
-            "O cartão foi desconectado durante a extração."
-        ) from exc
-    except OSError as exc:
-        if not root.exists():
-            raise DriveDisconnectedError(
-                "O cartão foi desconectado durante a extração."
-            ) from exc
-        raise InstallError(f"Falha de I/O durante a extração: {exc}.") from exc
-
-    logger.info("Extração concluída: %d entrada(s) gravada(s).", written)
-    return written
+    compressed = sum(sizes)
+    needed = int(compressed * _EXTRACTED_RATIO)
+    available = free_bytes(safe_resolve(sd_root))
+    if available and available < needed:
+        raise InstallError(
+            f"Espaço insuficiente: o pacote tem {human_size(compressed)} e a "
+            f"instalação precisa de cerca de {human_size(needed)}, mas há apenas "
+            f"{human_size(available)} livres no cartão. Libere espaço ou escolha "
+            "a modalidade menor."
+        )
 
 
 def write_version_file(sd_root: Path, version: str, released: date | None = None) -> None:
@@ -328,24 +306,69 @@ def install_payload(
     extract_progress: ExtractProgress | None = None,
     should_cancel: CancelCheck | None = None,
 ) -> InstallResult:
-    """Orquestra download → extração → gravação de versão.
-
-    O temporário é sempre removido, inclusive em falha, para não deixar lixo de
-    centenas de MB no cartão do usuário.
-    """
-    archive_path, payload_bytes = download_payload(
-        package, settings, sd_root, download_progress, should_cancel
+    """Instala um arquivo e grava a versão. Atalho de :func:`install_packages`."""
+    return install_packages(
+        (package,),
+        version,
+        sd_root,
+        settings,
+        released,
+        download_progress,
+        extract_progress,
+        should_cancel,
     )
-    try:
-        entries = extract_payload(archive_path, sd_root, extract_progress, should_cancel)
-        write_version_file(sd_root, version, released)
-    finally:
-        _discard(archive_path)
+
+
+def install_packages(
+    packages: Sequence[PackageInfo],
+    version: str,
+    sd_root: Path,
+    settings: Settings,
+    released: date | None = None,
+    download_progress: DownloadProgress | None = None,
+    extract_progress: ExtractProgress | None = None,
+    should_cancel: CancelCheck | None = None,
+    on_archive_start: ArchiveStart | None = None,
+) -> InstallResult:
+    """Baixa e extrai todos os arquivos da modalidade, na ordem recebida.
+
+    A versão só é gravada depois do último arquivo: ``packetVersion.txt`` é o
+    estado do cartão, e escrevê-lo no meio faria o cartão declarar uma versão
+    que ainda não está inteira lá.
+
+    O temporário de cada arquivo é removido antes de baixar o próximo, para não
+    exigir espaço para todos os pacotes ao mesmo tempo.
+    """
+    if not packages:
+        raise InstallError("Nenhum arquivo para instalar nesta modalidade.")
+
+    total_archives = len(packages)
+    entries = payload_bytes = 0
+
+    for index, package in enumerate(packages, start=1):
+        if should_cancel is not None and should_cancel():
+            raise OperationCancelled("Instalação cancelada pelo usuário.")
+        if on_archive_start is not None:
+            on_archive_start(index, total_archives, package.label)
+
+        archive_path, received = download_payload(
+            package, settings, sd_root, download_progress, should_cancel
+        )
+        try:
+            entries += extract_archive(
+                archive_path, sd_root, extract_progress, should_cancel
+            )
+            payload_bytes += received
+        finally:
+            _discard(archive_path)
+
+    write_version_file(sd_root, version, released)
 
     return InstallResult(
         version=version,
         released=released,
-        modality=package.modality,
+        modality=packages[0].modality,
         extracted_entries=entries,
         payload_bytes=payload_bytes,
+        archives=total_archives,
     )

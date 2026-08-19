@@ -470,7 +470,7 @@ class MainWindow(QMainWindow):
             return
 
         try:
-            package = report.package_for(modality)
+            packages = report.packages_for(modality)
         except Exception as error:  # noqa: BLE001 - mensagem já é acionável
             QMessageBox.warning(self, "Modalidade indisponível", str(error))
             return
@@ -484,7 +484,7 @@ class MainWindow(QMainWindow):
         self.elapsed_label.setText("Tempo decorrido: poucos segundos")
         worker = UpdateWorker(
             root,
-            package,
+            packages,
             report.remote_version,
             self._settings,
             released=report.remote_released,

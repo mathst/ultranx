@@ -26,6 +26,7 @@ dependencies = [
   "PyQt6>=6.6",
   "psutil>=5.9",
   "requests>=2.31",
+  "py7zr>=0.20",
 ]
 
 [project.optional-dependencies]
