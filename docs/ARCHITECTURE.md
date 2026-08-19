@@ -1,0 +1,87 @@
+# Arquitetura do UltraNX
+
+## Camadas
+
+```
+ui/            PyQt6: widgets, diálogos, máquina de estados da tela
+  ^ sinais
+workers/       QThread: isola I/O do event loop; traduz exceção -> FailureReport
+  ^ chamadas diretas
+core/          domínio puro (nenhum import de PyQt6): regras e I/O
+config.py      constantes imutáveis + Settings resolvido do ambiente
+```
+
+Regra estrutural: `core/` **não** importa PyQt6. É o que permite testar limpeza,
+integridade e comparação de versão sem display gráfico, e é verificado
+indiretamente pela suíte rodando headless no CI.
+
+## Módulos de domínio
+
+| Módulo                 | Responsabilidade                                                        |
+| ---------------------- | ----------------------------------------------------------------------- |
+| `drive_detector.py`    | Varre `psutil.disk_partitions()`, filtra FAT32/exFAT removível, valida raiz escolhida à mão |
+| `version_inspector.py` | Busca `packetVersion.txt` remoto + `manifest.json`, compara com o local |
+| `sanitizer.py`         | Plano de limpeza por whitelist estrita e sua execução                   |
+| `installer.py`         | Download em chunks, verificação SHA-256, extração, gravação da versão   |
+| `recovery.py`          | Preserva log, monta relatório de falha, finaliza a mídia                 |
+| `paths.py`             | Contenção de caminho, casefold, anti-traversal                          |
+| `errors.py`            | Hierarquia de exceções, cada uma com orientação de recuperação           |
+
+## Concorrência
+
+Dois workers `QThread`, um por operação, ambos com o mesmo contrato: emitem
+**exatamente um** de `finished_ok` ou `failed`.
+
+- `VersionWorker` — I/O de rede da inspeção.
+- `UpdateWorker` — limpeza, download, extração e finalização, com progresso
+  fatiado em faixas fixas (0–10 limpeza, 10–70 download, 70–95 extração,
+  95–100 finalização) para a barra avançar monotonicamente.
+
+Callbacks de progresso do `core` são funções síncronas comuns; o worker apenas
+as encaminha para `pyqtSignal.emit`. É o que mantém `core/` livre de Qt.
+
+Cancelamento é **cooperativo**: `request_cancel()` levanta uma flag que as
+funções de core consultam entre chunks e entradas do ZIP. `QThread.terminate()`
+nunca é usado — matar a thread no meio de uma escrita FAT32 deixaria o cartão em
+estado indefinido.
+
+## O modelo de segurança da limpeza
+
+Três camadas independentes, todas obrigatórias:
+
+1. **Contenção** — `is_within(root, candidate)` compara caminhos resolvidos.
+   Neutraliza `..`, symlinks e barras invertidas.
+2. **Whitelist na montagem do plano** — `is_protected()` decide item por item.
+   Em conflito, a whitelist vence a lista de remoção. Desconhecido na raiz é
+   preservado (falha segura).
+3. **Revalidação na execução** — `execute_plan()` chama `is_protected()` de novo
+   antes de cada remoção. Um plano adulterado não apaga nada protegido.
+
+O sanitizer só varre o **primeiro nível** da raiz. Isso é deliberado: mantém a
+whitelist auditável a olho nu e limita o dano possível de um bug.
+
+## Integridade do payload
+
+O download vai para arquivo temporário — nunca direto sobre a raiz — com SHA-256
+calculado em streaming durante a escrita. Divergência de hash ou de tamanho
+descarta o temporário antes de qualquer gravação no cartão.
+
+Na extração, cada entrada do ZIP passa por `join_within()`; entradas que
+escapariam da raiz (zip-slip) são descartadas com log em WARNING.
+
+O temporário fica no próprio SD quando há espaço (extração local, mais rápida) e
+cai para o temp do sistema quando não há. É sempre removido, inclusive em falha.
+
+## Estado
+
+Nenhum banco. A versão instalada é a primeira linha de `packetVersion.txt` na
+raiz do cartão, gravada com `fsync` e **relida para confirmação** — em FAT32 uma
+escrita aparentemente bem-sucedida pode não persistir se o cartão sair antes do
+flush.
+
+## Falhas
+
+Todo erro esperado é convertido para a hierarquia de `core/errors.py`, cada
+classe carregando um `guidance` acionável. O worker embala isso num
+`FailureReport` que inclui a etapa, se o cartão pode estar em estado parcial e
+onde o log foi preservado. A UI mostra o relatório; o usuário nunca vê traceback.

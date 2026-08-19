@@ -1,0 +1,80 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ultranx"
+version = "0.1.0"
+description = "Atualizador do pacote R O X para cartões SD de Nintendo Switch"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+keywords = ["nintendo-switch", "homebrew", "atmosphere", "sd-card", "pyqt6"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: X11 Applications :: Qt",
+  "Intended Audience :: End Users/Desktop",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: Microsoft :: Windows",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Utilities",
+]
+dependencies = [
+  "PyQt6>=6.6",
+  "psutil>=5.9",
+  "requests>=2.31",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0",
+  "pytest-cov>=5.0",
+  "ruff>=0.6",
+  "pyinstaller>=6.6",
+]
+
+[project.gui-scripts]
+ultranx = "ultranx.__main__:main"
+
+[project.urls]
+Homepage = "https://github.com/mathst/ultranx"
+Issues = "https://github.com/mathst/ultranx/issues"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-q"
+
+[tool.coverage.run]
+source = ["ultranx"]
+omit = ["*/ui/*", "*/workers/*", "*/__main__.py"]
+
+[tool.coverage.report]
+fail_under = 80
+show_missing = true
+exclude_lines = [
+  "pragma: no cover",
+  "if __name__ == .__main__.:",
+  "raise AssertionError",
+]
+
+[tool.ruff]
+line-length = 90
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "PTH", "RET", "ARG"]
+ignore = ["B008"]
+
+[tool.ruff.lint.per-file-ignores]
+# Dublês de teste precisam espelhar assinaturas reais sem usar todos os args.
+"tests/*" = ["ARG001", "ARG002", "ARG005"]
+# Overrides do Qt (closeEvent) recebem argumentos que nem sempre são usados.
+"src/ultranx/ui/*" = ["ARG002"]
