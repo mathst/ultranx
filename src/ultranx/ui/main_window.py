@@ -40,6 +40,7 @@ from ..config import (
     save_base_url,
 )
 from ..core import recovery
+from ..core.archives import free_bytes
 from ..core.dates import format_date
 from ..core.drive_detector import (
     DriveCandidate,
@@ -47,8 +48,8 @@ from ..core.drive_detector import (
     scan_removable_drives,
     validate_manual_root,
 )
-from ..core.errors import DriveError
-from ..core.installer import InstallResult
+from ..core.errors import DriveError, UltraNXError
+from ..core.installer import INSTALL_SIZE_RATIO, InstallResult
 from ..core.paths import human_size
 from ..core.progress import RateEstimator, format_duration
 from ..core.recovery import FailureReport
@@ -75,7 +76,7 @@ class MainWindow(QMainWindow):
         self._overall = RateEstimator()
 
         self.setWindowTitle(f"{APP_NAME} {APP_VERSION}")
-        self.setMinimumSize(660, 520)
+        self.setMinimumSize(680, 760)
         self._build_ui()
         self.refresh_drives()
 
@@ -148,8 +149,19 @@ class MainWindow(QMainWindow):
 
         self.modality_combo = QComboBox()
         self.modality_combo.setEnabled(False)
+        self.modality_combo.currentIndexChanged.connect(self._on_modality_changed)
         row.addWidget(self.modality_combo, stretch=1)
         layout.addLayout(row)
+
+        # Tudo que o usuário precisa para decidir antes de apagar o cartão:
+        # arquivos, tamanhos, integridade, espaço e tempo estimado.
+        self.details_view = QTextEdit(readOnly=True)
+        self.details_view.setPlaceholderText(
+            "Os detalhes do pacote aparecem aqui depois de verificar."
+        )
+        # Alto o bastante para o relatório da modalidade maior caber sem rolar.
+        self.details_view.setMinimumHeight(230)
+        layout.addWidget(self.details_view)
 
         return group
 
@@ -240,6 +252,7 @@ class MainWindow(QMainWindow):
 
     def _reset_version_state(self) -> None:
         self._report = None
+        self.details_view.clear()
         self.modality_combo.clear()
         self.modality_combo.setEnabled(False)
         self.update_button.setEnabled(False)
@@ -354,16 +367,19 @@ class MainWindow(QMainWindow):
         self._report = report
         self.version_label.setText(self._version_text(report=report))
 
+        self.modality_combo.blockSignals(True)
         self.modality_combo.clear()
         for modality in report.available_modalities:
             self.modality_combo.addItem(MODALITY_LABELS.get(modality, modality), modality)
+        self.modality_combo.blockSignals(False)
         self.modality_combo.setEnabled(bool(report.available_modalities))
         self.update_button.setEnabled(bool(report.available_modalities))
+        self._on_modality_changed()
 
         if not report.manifest_available:
             self._append(
-                "AVISO: o servidor não publicou manifest.json — o download não "
-                "poderá ser validado por checksum."
+                "AVISO: o servidor não publicou checksums — o download não "
+                "poderá ser validado."
             )
         if report.is_downgrade:
             self._append(
@@ -375,6 +391,72 @@ class MainWindow(QMainWindow):
         else:
             self._append("O cartão já está na versão publicada.")
         self.stage_label.setText("Pronto para atualizar.")
+
+    def _on_modality_changed(self, index: int = -1) -> None:  # noqa: ARG002
+        """Repopula o painel de detalhes para a modalidade selecionada."""
+        self.details_view.setPlainText(self._details_text())
+
+    def _details_text(self) -> str:
+        """Monta o relatório da modalidade: arquivos, integridade, espaço e tempo.
+
+        Tudo o que decide se vale apertar "Atualizar cartão" fica visível ANTES
+        do clique — inclusive o veredito de espaço, que é o que impede começar
+        uma instalação que não tem como terminar.
+        """
+        report = self._report
+        modality = self.modality_combo.currentData()
+        if report is None or not modality:
+            return ""
+
+        try:
+            packages = report.packages_for(modality)
+        except UltraNXError as error:
+            return str(error)
+
+        titulo = MODALITY_LABELS.get(modality, modality)
+        lines = [f"{titulo} — {len(packages)} arquivo(s)"]
+        for package in packages:
+            size = human_size(package.size_bytes) if package.size_bytes else "tamanho ?"
+            check = (
+                f"SHA-256 {package.sha256[:12]}…" if package.sha256 else "SEM checksum"
+            )
+            lines.append(f"  • {package.label}  ({size}, {check})")
+
+        total = report.total_bytes_for(modality)
+        if total:
+            lines.append(f"\nTotal a baixar: {human_size(total)}")
+
+        root = self.selected_root
+        if root is not None and total:
+            free = free_bytes(root)
+            needed = int(total * INSTALL_SIZE_RATIO)
+            lines.append(
+                f"Espaço: {human_size(free)} livres | "
+                f"~{human_size(needed)} necessários na instalação"
+            )
+            lines.append(
+                "  cabe no cartão"
+                if free >= needed
+                else "  NÃO CABE — escolha a modalidade menor ou libere espaço"
+            )
+
+        if total:
+            lines.append("\nTempo estimado de download:")
+            for label, mbps in (("lenta", 1.0), ("média", 5.0), ("rápida", 20.0)):
+                seconds = total / (mbps * 1024 * 1024)
+                lines.append(
+                    f"  conexão {label} ({mbps:.0f} MB/s): {format_duration(seconds)}"
+                )
+            lines.append(
+                "  A estimativa real aparece na barra assim que o download começa."
+            )
+
+        if not all(package.sha256 for package in packages):
+            lines.append(
+                "\nAVISO: nem todos os arquivos têm checksum publicado; a "
+                "integridade desses não poderá ser verificada."
+            )
+        return "\n".join(lines)
 
     # --- slots: atualização -------------------------------------------------
 

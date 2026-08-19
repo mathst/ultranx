@@ -14,6 +14,10 @@ Sem banco de dados: o estado fica no próprio cartão, no arquivo
    identificar a raiz do Switch, você aponta a pasta manualmente.
 2. **Compara versões** — lê o `packetVersion.txt` local e o publicado no servidor,
    e libera a escolha entre **Pacote Padrão** e **Pacote Completo (Android/Linux)**.
+   O painel de detalhes mostra, antes de qualquer clique: os arquivos da
+   modalidade com tamanho e SHA-256, o total a baixar, quanto espaço a instalação
+   exige contra o que o cartão tem livre, e a estimativa de tempo por faixa de
+   velocidade de conexão.
 3. **Limpa com whitelist estrita** — remove só as pastas de sistema legadas que
    causam conflito (`atmosphere`, `bootloader`, `config`, `sept`,
    `warmboot_mariko`, `payload.bin`). `Nintendo`, `emummc`, `tico/roms`,

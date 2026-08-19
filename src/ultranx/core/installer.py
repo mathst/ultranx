@@ -48,8 +48,9 @@ ArchiveStart = Callable[[int, int, str], None]
 
 _TEMP_PREFIX = "ultranx-payload-"
 _SAFETY_MARGIN = 1.15  # o pacote e a extração convivem no mesmo cartão
-# Folga sobre o tamanho comprimido: 7z de pacote de Switch expande ~1,6x.
-_EXTRACTED_RATIO = 2.6
+# Folga sobre o tamanho comprimido: o pacote baixado e o conteúdo extraído
+# convivem no cartão, e 7z de pacote de Switch expande ~1,6x.
+INSTALL_SIZE_RATIO = 2.6
 
 
 @dataclass(frozen=True, slots=True)
@@ -243,7 +244,7 @@ def ensure_space(sd_root: Path, packages: Sequence[PackageInfo]) -> None:
         return
 
     compressed = sum(sizes)
-    needed = int(compressed * _EXTRACTED_RATIO)
+    needed = int(compressed * INSTALL_SIZE_RATIO)
     available = free_bytes(safe_resolve(sd_root))
     if available and available < needed:
         raise InstallError(
