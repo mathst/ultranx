@@ -30,7 +30,9 @@ Sem banco de dados: o estado fica no próprio cartão, no arquivo
    arquivos é irreversível e nenhum pacote os traz de volta.
 4. **Instala** — download em streaming com barra de progresso real, validação de
    SHA-256, extração sobre a raiz e gravação verificada do novo
-   `packetVersion.txt`.
+   `packetVersion.txt`. Cada etapa estima o tempo restante a partir da vazão
+   medida ao vivo, com média móvel exponencial: cartão SD tem vazão irregular, e
+   média simples faria a estimativa pular de "2 min" para "20 min" e voltar.
 5. **Recupera e finaliza** — em falha de I/O ou desconexão, preserva o log e
    mostra o que fazer; em sucesso, faz o flush e orienta a ejeção segura.
 

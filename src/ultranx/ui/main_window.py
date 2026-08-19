@@ -43,8 +43,9 @@ from ..core.drive_detector import (
 from ..core.errors import DriveError
 from ..core.installer import InstallResult
 from ..core.paths import human_size
+from ..core.progress import RateEstimator, format_duration
 from ..core.recovery import FailureReport
-from ..core.sanitizer import build_plan
+from ..core.sanitizer import CleanupPlan, build_plan
 from ..core.version_inspector import VersionReport
 from ..workers.update_worker import UpdateWorker
 from ..workers.version_worker import VersionWorker
@@ -62,6 +63,9 @@ class MainWindow(QMainWindow):
         self._report: VersionReport | None = None
         self._version_worker: VersionWorker | None = None
         self._update_worker: UpdateWorker | None = None
+        # Cronômetro do processo inteiro: cada etapa já estima o seu próprio
+        # tempo restante, mas o usuário também quer saber quanto já correu.
+        self._overall = RateEstimator()
 
         self.setWindowTitle(f"{APP_NAME} {APP_VERSION}")
         self.setMinimumSize(660, 520)
@@ -128,7 +132,11 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout(group)
 
         self.stage_label = QLabel("Aguardando.")
+        self.stage_label.setWordWrap(True)
         layout.addWidget(self.stage_label)
+
+        self.elapsed_label = QLabel("")
+        layout.addWidget(self.elapsed_label)
 
         self.progress = QProgressBar()
         self.progress.setRange(0, 100)
@@ -307,22 +315,83 @@ class MainWindow(QMainWindow):
 
     # --- slots: atualização -------------------------------------------------
 
+    @staticmethod
+    def _summarize_plan(plan: CleanupPlan, root: Path) -> tuple[str, str, str]:
+        """Resume o plano em ``(remoções, preservações, lista completa)``.
+
+        Agrupa por pasta-pai em vez de listar tudo em fila: num cartão real são
+        dezenas de itens dentro de ``switch/``, e uma lista corrida cresce muito
+        além da altura da tela — o diálogo é a trava de segurança, precisa caber
+        nela. A lista item a item vai para "Mostrar detalhes".
+        """
+        root_items = [item for item in plan.items if item.path.parent == root]
+        nested: dict[str, int] = {}
+        for item in plan.items:
+            if item.path.parent != root:
+                nested[item.path.parent.name] = nested.get(item.path.parent.name, 0) + 1
+
+        removal_lines = [f"  • {item.path.name}" for item in root_items]
+        removal_lines += [
+            f"  • {parent}/ — {count} item(ns) de dentro (a pasta permanece)"
+            for parent, count in sorted(nested.items())
+        ]
+        removals = "\n".join(removal_lines) or "  (nada a remover)"
+
+        # O que é preservado sai do plano real, não de texto fixo.
+        root_kept = sorted(
+            (path.name for path in plan.preserved if path.parent == root),
+            key=str.casefold,
+        )
+        nested_kept = sorted(
+            (
+                f"{path.parent.name}/{path.name}"
+                for path in plan.preserved
+                if path.parent != root
+            ),
+            key=str.casefold,
+        )
+        preserved_lines = []
+        if nested_kept:
+            preserved_lines.append(
+                "  • dado seu dentro das pastas limpas: " + ", ".join(nested_kept)
+            )
+        if root_kept:
+            preserved_lines.append(
+                f"  • {len(root_kept)} itens na raiz: " + ", ".join(root_kept)
+            )
+        preserved = "\n".join(preserved_lines) or "  (nada a preservar)"
+
+        detailed = "REMOVER:\n" + "\n".join(
+            f"  {item.path.relative_to(root)}  ({item.reason})" for item in plan.items
+        )
+        detailed += "\n\nPRESERVAR:\n" + "\n".join(
+            f"  {path.relative_to(root)}" for path in plan.preserved
+        )
+        return removals, preserved, detailed
+
     def _confirm_update(self, root: Path) -> bool:
         plan = build_plan(root)
-        removals = (
-            "\n".join(f"  • {item.path.name}" for item in plan.items)
-            or "  (nada a remover)"
+        removals, preserved, detailed = self._summarize_plan(plan, root)
+
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Warning)
+        box.setWindowTitle("Confirmar atualização")
+        box.setText(
+            f"Isto vai apagar {len(plan.items)} item(ns) de {root} antes de "
+            "instalar a versão nova."
         )
-        answer = QMessageBox.question(
-            self,
-            "Confirmar atualização",
-            f"Raiz: {root}\n\nSerão removidas as pastas legadas:\n{removals}\n\n"
-            "Nintendo, emummc, tico/roms, themes/ThemezerNX, mods2 e binários "
-            "standalone serão preservados.\n\nContinuar?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
+        box.setInformativeText(
+            f"Será removido:\n{removals}\n\n"
+            f"Será preservado:\n{preserved}\n\n"
+            "A remoção é necessária porque sobrescrever não basta: o mesmo nome "
+            "de arquivo pode carregar conteúdo de outra versão.\n\nContinuar?"
         )
-        return answer == QMessageBox.StandardButton.Yes
+        box.setDetailedText(detailed)
+        box.setStandardButtons(
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        box.setDefaultButton(QMessageBox.StandardButton.No)
+        return box.exec() == QMessageBox.StandardButton.Yes
 
     def start_update(self) -> None:
         root, report = self.selected_root, self._report
@@ -348,6 +417,8 @@ class MainWindow(QMainWindow):
             return
 
         self._set_running(True)
+        self._overall.reset()
+        self.elapsed_label.setText("Tempo decorrido: poucos segundos")
         worker = UpdateWorker(
             root,
             package,
@@ -382,8 +453,14 @@ class MainWindow(QMainWindow):
     def _on_progress(self, percent: int, detail: str) -> None:
         self.progress.setValue(percent)
         self.stage_label.setText(detail)
+        self._overall.update(percent, 100)
+        self.elapsed_label.setText(
+            f"Tempo decorrido: {format_duration(self._overall.elapsed())}"
+        )
 
     def _on_update_done(self, result: InstallResult) -> None:
+        total = format_duration(self._overall.elapsed())
+        self.elapsed_label.setText(f"Concluído em {total}.")
         self.progress.setValue(100)
         self.stage_label.setText(f"Atualizado para {result.version}.")
         self._append(

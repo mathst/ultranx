@@ -40,6 +40,16 @@ Dois workers `QThread`, um por operação, ambos com o mesmo contrato: emitem
 Callbacks de progresso do `core` são funções síncronas comuns; o worker apenas
 as encaminha para `pyqtSignal.emit`. É o que mantém `core/` livre de Qt.
 
+Cada etapa tem seu próprio `RateEstimator` (`core/progress.py`): as unidades são
+diferentes — itens na limpeza, bytes no download, entradas de ZIP na extração — e
+a vazão de uma não prevê a da outra. O relógio entra por parâmetro, com
+`time.monotonic` como padrão, o que mantém os testes determinísticos e protege a
+conta de ajuste de horário do sistema no meio da gravação.
+
+Duas guardas evitam estimativa mentirosa: amostras separadas por menos de 0,35 s
+são descartadas (chunk vindo de cache infla a vazão) e nada é estimado antes de
+2% de progresso, onde qualquer conta erra por ordens de magnitude.
+
 Cancelamento é **cooperativo**: `request_cancel()` levanta uma flag que as
 funções de core consultam entre chunks e entradas do ZIP. `QThread.terminate()`
 nunca é usado — matar a thread no meio de uma escrita FAT32 deixaria o cartão em

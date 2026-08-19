@@ -31,6 +31,7 @@ from ..core.drive_detector import looks_like_switch_root
 from ..core.errors import DriveDisconnectedError, OperationCancelled
 from ..core.installer import InstallResult
 from ..core.paths import human_size
+from ..core.progress import RateEstimator, format_duration, format_rate
 from ..core.version_inspector import PackageInfo
 
 logger = logging.getLogger(__name__)
@@ -73,6 +74,11 @@ class UpdateWorker(QThread):
         self._settings = settings
         self._cancelled = False
         self._stage = "preparação"
+        # Um estimador por etapa: as unidades são diferentes (itens, bytes,
+        # entradas de ZIP) e a vazão de uma não prevê a da outra.
+        self._clean_eta = RateEstimator()
+        self._download_eta = RateEstimator()
+        self._extract_eta = RateEstimator()
 
     # --- controle -----------------------------------------------------------
 
@@ -92,22 +98,34 @@ class UpdateWorker(QThread):
 
     def _on_clean(self, index: int, total: int, name: str) -> None:
         fraction = index / total if total else 1.0
-        self.progress_changed.emit(_scaled(fraction, _CLEAN_RANGE), f"Removendo {name}…")
+        eta = self._clean_eta.update(index, total)
+        detail = f"Removendo {name}… ({index}/{total})"
+        if eta is not None:
+            detail += f" — restam {format_duration(eta)}"
+        self.progress_changed.emit(_scaled(fraction, _CLEAN_RANGE), detail)
 
     def _on_download(self, received: int, total: int | None) -> None:
+        eta = self._download_eta.update(received, total)
+        rate = format_rate(self._download_eta.rate)
         if total:
             detail = f"Baixando {human_size(received)} de {human_size(total)}"
             percent = _scaled(received / total, _DOWNLOAD_RANGE)
         else:
             detail = f"Baixando {human_size(received)}"
             percent = _DOWNLOAD_RANGE[0]
+        if rate:
+            detail += f" a {rate}"
+        if eta is not None:
+            detail += f" — restam {format_duration(eta)}"
         self.progress_changed.emit(percent, detail)
 
     def _on_extract(self, index: int, total: int, name: str) -> None:
         fraction = index / total if total else 1.0
-        self.progress_changed.emit(
-            _scaled(fraction, _EXTRACT_RANGE), f"Extraindo {Path(name).name}…"
-        )
+        eta = self._extract_eta.update(index, total)
+        detail = f"Extraindo {Path(name).name}… ({index}/{total})"
+        if eta is not None:
+            detail += f" — restam {format_duration(eta)}"
+        self.progress_changed.emit(_scaled(fraction, _EXTRACT_RANGE), detail)
 
     # --- execução -----------------------------------------------------------
 
