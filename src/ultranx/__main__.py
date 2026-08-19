@@ -11,7 +11,13 @@ from typing import TextIO
 
 from PyQt6.QtWidgets import QApplication, QMessageBox
 
-from .config import APP_NAME, APP_VERSION, ENV_BASE_URL, load_settings
+from .config import (
+    APP_NAME,
+    APP_VERSION,
+    ENV_BASE_URL,
+    load_settings,
+    user_config_path,
+)
 from .logging_setup import configure_logging
 
 # Mantém vivos os streams substitutos abertos por ensure_std_streams().
@@ -69,14 +75,16 @@ def main(argv: list[str] | None = None) -> int:
     window.show()
 
     settings = load_settings()
-    if "example.invalid" in settings.base_url:
+    if not settings.is_configured:
         logger.warning("Servidor não configurado: %s", settings.base_url)
-        QMessageBox.warning(
+        QMessageBox.information(
             window,
-            "Servidor não configurado",
-            "Nenhum servidor de pacotes foi configurado.\n\nDefina a variável de "
-            f"ambiente {ENV_BASE_URL} com a URL base do repositório do pacote "
-            "antes de verificar atualizações.",
+            "Primeiro uso: configure o servidor",
+            "Informe o endereço do servidor de pacotes no campo 1 da janela e "
+            "clique em Salvar.\n\nO endereço fica guardado em "
+            f"{user_config_path()} e não precisa ser digitado de novo.\n\n"
+            f"Também dá para apontar por variável de ambiente ({ENV_BASE_URL}) "
+            "ou por um arquivo ultranx.json ao lado do executável.",
         )
 
     return app.exec()

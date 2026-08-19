@@ -58,20 +58,38 @@ Requer Python 3.11+.
 
 ## Configuração do servidor
 
-O UltraNX não vem com servidor embutido. Aponte-o para o repositório do pacote:
+O binário não vem com servidor embutido. **Abra o app, digite o endereço no campo
+"1. Servidor de pacotes" e clique em Salvar.** Fica guardado em
+`~/.ultranx/ultranx.json` e não precisa ser digitado de novo.
 
-```bash
-# Windows (PowerShell)
-$env:ULTRANX_BASE_URL = "https://seu-servidor.exemplo/ultranx"
-# Linux
-export ULTRANX_BASE_URL="https://seu-servidor.exemplo/ultranx"
+Para distribuir o executável já apontado — num pendrive, por exemplo — coloque um
+`ultranx.json` na mesma pasta do executável (veja
+[`docs/ultranx.example.json`](docs/ultranx.example.json)):
+
+```json
+{
+  "base_url": "https://servidor.exemplo/ultranx",
+  "http_timeout": 30
+}
 ```
+
+A resolução tem três camadas, da mais forte para a mais fraca:
+
+1. variável de ambiente `ULTRANX_BASE_URL`;
+2. `ultranx.json` ao lado do executável (portátil, vence o perfil do usuário);
+3. `~/.ultranx/ultranx.json` (o que o botão Salvar grava).
+
+Sem nenhuma das três, o app abre, avisa que falta configurar e bloqueia a
+verificação — nunca tenta baixar de um endereço inválido.
 
 | Variável                  | Efeito                                                        |
 | ------------------------- | ------------------------------------------------------------- |
-| `ULTRANX_BASE_URL`        | URL base do repositório do pacote (obrigatória)               |
+| `ULTRANX_BASE_URL`        | URL base do repositório do pacote                             |
 | `ULTRANX_HTTP_TIMEOUT`    | Timeout HTTP em segundos (padrão `30`)                        |
 | `ULTRANX_SKIP_HASH_CHECK` | `1` desativa a checagem de SHA-256 — **só para depuração**     |
+
+Endereço sem `http://`/`https://` assume `https://`. Nome de host sem ponto é
+aceito de propósito (`http://servidor/rox`), para quem hospeda em rede local.
 
 O servidor precisa expor:
 

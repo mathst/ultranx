@@ -22,6 +22,7 @@ from PyQt6.QtWidgets import (
     QGroupBox,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QMainWindow,
     QMessageBox,
     QProgressBar,
@@ -31,7 +32,13 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from ..config import APP_NAME, APP_VERSION, MODALITY_LABELS, load_settings
+from ..config import (
+    APP_NAME,
+    APP_VERSION,
+    MODALITY_LABELS,
+    load_settings,
+    save_base_url,
+)
 from ..core import recovery
 from ..core.dates import format_date
 from ..core.drive_detector import (
@@ -78,6 +85,7 @@ class MainWindow(QMainWindow):
         root = QWidget(self)
         layout = QVBoxLayout(root)
 
+        layout.addWidget(self._build_server_group())
         layout.addWidget(self._build_drive_group())
         layout.addWidget(self._build_version_group())
         layout.addWidget(self._build_progress_group())
@@ -88,8 +96,26 @@ class MainWindow(QMainWindow):
 
         self.setCentralWidget(root)
 
+    def _build_server_group(self) -> QGroupBox:
+        """Campo do servidor: o binário é distribuído sem URL embutida."""
+        group = QGroupBox("1. Servidor de pacotes", self)
+        row = QHBoxLayout(group)
+
+        self.server_edit = QLineEdit()
+        self.server_edit.setPlaceholderText("https://servidor.exemplo/ultranx")
+        if self._settings.is_configured:
+            self.server_edit.setText(self._settings.base_url)
+        self.server_edit.returnPressed.connect(self.save_server_url)
+        row.addWidget(self.server_edit, stretch=1)
+
+        self.save_server_button = QPushButton("Salvar")
+        self.save_server_button.clicked.connect(self.save_server_url)
+        row.addWidget(self.save_server_button)
+
+        return group
+
     def _build_drive_group(self) -> QGroupBox:
-        group = QGroupBox("1. Cartão SD", self)
+        group = QGroupBox("2. Cartão SD", self)
         row = QHBoxLayout(group)
 
         self.drive_combo = QComboBox()
@@ -108,7 +134,7 @@ class MainWindow(QMainWindow):
         return group
 
     def _build_version_group(self) -> QGroupBox:
-        group = QGroupBox("2. Versão e modalidade", self)
+        group = QGroupBox("3. Versão e modalidade", self)
         layout = QVBoxLayout(group)
 
         self.version_label = QLabel(self._version_text())
@@ -128,7 +154,7 @@ class MainWindow(QMainWindow):
         return group
 
     def _build_progress_group(self) -> QGroupBox:
-        group = QGroupBox("3. Atualização", self)
+        group = QGroupBox("4. Atualização", self)
         layout = QVBoxLayout(group)
 
         self.stage_label = QLabel("Aguardando.")
@@ -220,6 +246,33 @@ class MainWindow(QMainWindow):
         self.progress.setValue(0)
         self.stage_label.setText("Aguardando.")
 
+    # --- slots: servidor ----------------------------------------------------
+
+    def save_server_url(self) -> None:
+        """Persiste a URL informada e recarrega as configurações."""
+        try:
+            target = save_base_url(self.server_edit.text())
+        except ValueError as error:
+            QMessageBox.warning(self, "Endereço inválido", str(error))
+            return
+        except OSError as error:
+            QMessageBox.warning(
+                self,
+                "Não foi possível salvar",
+                f"Falha ao gravar a configuração: {error}",
+            )
+            return
+
+        self._settings = load_settings()
+        self._reset_version_state()
+        self.server_edit.setText(self._settings.base_url)
+        self._append(f"Servidor salvo em {target}: {self._settings.base_url}")
+        if self._settings.base_url.startswith("http://"):
+            self._append(
+                "AVISO: endereço sem HTTPS. O download fica exposto a alteração "
+                "no caminho; use https:// se o servidor suportar."
+            )
+
     # --- slots: mídia -------------------------------------------------------
 
     def refresh_drives(self) -> None:
@@ -276,6 +329,16 @@ class MainWindow(QMainWindow):
             return
 
         self._settings = load_settings()
+        if not self._settings.is_configured:
+            QMessageBox.information(
+                self,
+                "Servidor não configurado",
+                "Informe o endereço do servidor de pacotes no campo 1 e clique "
+                "em Salvar antes de verificar.",
+            )
+            self.server_edit.setFocus()
+            return
+
         self.check_button.setEnabled(False)
         self.stage_label.setText("Consultando servidor…")
 
@@ -448,6 +511,8 @@ class MainWindow(QMainWindow):
         self.refresh_button.setEnabled(not running)
         self.browse_button.setEnabled(not running)
         self.drive_combo.setEnabled(not running)
+        self.server_edit.setEnabled(not running)
+        self.save_server_button.setEnabled(not running)
         self.modality_combo.setEnabled(not running and self._report is not None)
 
     def _on_progress(self, percent: int, detail: str) -> None:
