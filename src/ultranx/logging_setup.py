@@ -59,11 +59,15 @@ def configure_logging(verbose: bool = False) -> Path:
         file_handler.setFormatter(formatter)
         root.addHandler(file_handler)
     except (OSError, PermissionError) as exc:
-        print(f"[{APP_NAME}] log em arquivo indisponível: {exc}", file=sys.stderr)
+        if sys.stderr is not None:
+            print(f"[{APP_NAME}] log em arquivo indisponível: {exc}", file=sys.stderr)
 
-    stream_handler = logging.StreamHandler(sys.stderr)
-    stream_handler.setFormatter(formatter)
-    root.addHandler(stream_handler)
+    # Em build --noconsole do PyInstaller não há stderr: um StreamHandler
+    # apontando para None falharia em toda emissão de log.
+    if sys.stderr is not None:
+        stream_handler = logging.StreamHandler(sys.stderr)
+        stream_handler.setFormatter(formatter)
+        root.addHandler(stream_handler)
 
     # requests/urllib3 em DEBUG vazam URLs e headers; manter em WARNING.
     logging.getLogger("urllib3").setLevel(logging.WARNING)

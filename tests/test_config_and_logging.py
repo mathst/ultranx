@@ -94,6 +94,46 @@ def test_configure_logging_creates_file(monkeypatch, tmp_path: Path):
     assert "mensagem de verificação" in target.read_text(encoding="utf-8")
 
 
+def test_configure_logging_without_stderr_uses_only_file(monkeypatch, tmp_path: Path):
+    """Build --noconsole não tem stderr: nenhum StreamHandler deve ser criado."""
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
+    monkeypatch.setattr("ultranx.logging_setup.sys.stderr", None)
+
+    configure_logging()
+    handlers = logging.getLogger().handlers
+
+    assert len(handlers) == 1
+    assert isinstance(handlers[0], logging.FileHandler)
+    logging.getLogger("ultranx.teste").info("sem stderr")  # não deve levantar
+
+
+def test_ensure_std_streams_replaces_none(monkeypatch):
+    """Sem esta guarda, --version travaria num diálogo de traceback do Qt."""
+    import sys as _sys
+
+    from ultranx.__main__ import ensure_std_streams
+
+    monkeypatch.setattr("sys.stdout", None)
+    monkeypatch.setattr("sys.stderr", None)
+
+    ensure_std_streams()
+
+    assert _sys.stdout is not None
+    assert _sys.stderr is not None
+    _sys.stdout.write("descartado")  # não deve levantar
+    _sys.stderr.write("descartado")
+
+
+def test_ensure_std_streams_keeps_existing():
+    import sys as _sys
+
+    from ultranx.__main__ import ensure_std_streams
+
+    original = _sys.stdout
+    ensure_std_streams()
+    assert _sys.stdout is original
+
+
 def test_configure_logging_is_idempotent(monkeypatch, tmp_path: Path):
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
     configure_logging()

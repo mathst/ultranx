@@ -31,11 +31,13 @@ EXCLUDED = [
 ]
 
 analysis = Analysis(
-    [str(Path("src") / "ultranx" / "__main__.py")],
+    # Precisa ser o launcher, não src/ultranx/__main__.py: o PyInstaller roda o
+    # alvo como módulo de topo e os imports relativos do pacote falhariam.
+    ["launcher.py"],
     pathex=[str(Path("src"))],
     binaries=[],
     datas=[],
-    hiddenimports=["ultranx.ui.main_window"],
+    hiddenimports=["ultranx", "ultranx.ui.main_window"],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
