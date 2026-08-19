@@ -35,10 +35,20 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
+      - name: Dependências de sistema do Qt (Linux)
+        # Os testes de entrypoint importam PyQt6.QtWidgets, que precisa destas
+        # libs mesmo sem abrir janela: sem elas o import falha com
+        # "libEGL.so.1: cannot open shared object file".
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libegl1 libxkbcommon-x11-0 libgl1
       - name: Instalar dependências
         run: pip install -r requirements-dev.txt
       - name: Testes com cobertura
-        # A camada core não depende de PyQt6, então roda headless sem display.
+        # A camada core não depende de PyQt6; offscreen cobre o resto sem display.
+        env:
+          QT_QPA_PLATFORM: offscreen
         run: pytest --cov=ultranx --cov-report=term-missing --cov-report=xml
       - name: Publicar cobertura
         if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
