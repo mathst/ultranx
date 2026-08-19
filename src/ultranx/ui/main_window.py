@@ -33,8 +33,10 @@ from PyQt6.QtWidgets import (
 
 from ..config import APP_NAME, APP_VERSION, MODALITY_LABELS, load_settings
 from ..core import recovery
+from ..core.dates import format_date
 from ..core.drive_detector import (
     DriveCandidate,
+    LocalState,
     scan_removable_drives,
     validate_manual_root,
 )
@@ -105,7 +107,8 @@ class MainWindow(QMainWindow):
         group = QGroupBox("2. Versão e modalidade", self)
         layout = QVBoxLayout(group)
 
-        self.version_label = QLabel("Versão local: — | Versão publicada: —")
+        self.version_label = QLabel(self._version_text())
+        self.version_label.setWordWrap(True)
         layout.addWidget(self.version_label)
 
         row = QHBoxLayout()
@@ -151,6 +154,36 @@ class MainWindow(QMainWindow):
     def _append(self, message: str) -> None:
         self.log_view.append(message)
         logger.info("UI: %s", message)
+
+    def _version_text(
+        self,
+        local: LocalState | None = None,
+        report: VersionReport | None = None,
+    ) -> str:
+        """Monta o texto de versões com as datas de cada lado.
+
+        Da versão instalada mostra tanto a data de lançamento quanto a data em
+        que foi gravada no cartão — são coisas diferentes, e a segunda é a única
+        disponível num cartão atualizado à mão.
+        """
+        state = report.local if report is not None else local
+
+        if state is None or state.version is None:
+            installed = "Versão instalada: não instalada"
+        else:
+            details = [f"lançada em {format_date(state.released)}"]
+            if state.installed_at is not None:
+                details.append(f"gravada em {format_date(state.installed_at)}")
+            installed = f"Versão instalada: {state.version} ({', '.join(details)})"
+
+        if report is None:
+            published = "Versão publicada: —"
+        else:
+            published = (
+                f"Versão publicada: {report.remote_version} "
+                f"(lançada em {format_date(report.remote_released)})"
+            )
+        return f"{installed}\n{published}"
 
     @property
     def selected_root(self) -> Path | None:
@@ -217,10 +250,7 @@ class MainWindow(QMainWindow):
             return
         candidate = self._candidates[index]
         self._reset_version_state()
-        self.version_label.setText(
-            f"Versão local: {candidate.local_version or 'não instalada'} "
-            "| Versão publicada: —"
-        )
+        self.version_label.setText(self._version_text(local=candidate.local_state))
         if candidate.total_bytes:
             self._append(
                 f"{candidate.mountpoint}: {human_size(candidate.free_bytes)} livres "
@@ -251,10 +281,7 @@ class MainWindow(QMainWindow):
 
     def _on_version_ready(self, report: VersionReport) -> None:
         self._report = report
-        self.version_label.setText(
-            f"Versão local: {report.local_version or 'não instalada'} "
-            f"| Versão publicada: {report.remote_version}"
-        )
+        self.version_label.setText(self._version_text(report=report))
 
         self.modality_combo.clear()
         for modality in report.available_modalities:
@@ -322,7 +349,12 @@ class MainWindow(QMainWindow):
 
         self._set_running(True)
         worker = UpdateWorker(
-            root, package, report.remote_version, self._settings, parent=self
+            root,
+            package,
+            report.remote_version,
+            self._settings,
+            released=report.remote_released,
+            parent=self,
         )
         worker.stage_changed.connect(self.stage_label.setText)
         worker.progress_changed.connect(self._on_progress)

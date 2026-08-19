@@ -24,10 +24,13 @@ def settings() -> Settings:
 class FakeResponse:
     """Dublê mínimo de ``requests.Response``."""
 
-    def __init__(self, text: str = "", status: int = 200) -> None:
+    def __init__(
+        self, text: str = "", status: int = 200, last_modified: str | None = None
+    ) -> None:
         self.text = text
         self.content = text.encode("utf-8")
         self.status_code = status
+        self.headers = {"Last-Modified": last_modified} if last_modified else {}
 
     def raise_for_status(self) -> None:
         if self.status_code >= 400:
@@ -42,6 +45,7 @@ class FakeResponse:
 def _manifest(**overrides) -> str:
     document = {
         "version": "1.4.2",
+        "released": "2026-08-15",
         "packages": {
             MODALITY_STANDARD: {
                 "url": "https://host/rox/rox-standard-1.4.2.zip",
@@ -59,10 +63,15 @@ def _manifest(**overrides) -> str:
     return json.dumps(document)
 
 
-def _route(monkeypatch, version_body: str, manifest_body: str | None):
+def _route(
+    monkeypatch,
+    version_body: str,
+    manifest_body: str | None,
+    last_modified: str | None = None,
+):
     def fake_get(url, timeout=None, **kwargs):  # noqa: ANN001, ARG001
         if url.endswith("packetVersion.txt"):
-            return FakeResponse(version_body)
+            return FakeResponse(version_body, last_modified=last_modified)
         if url.endswith("manifest.json"):
             if manifest_body is None:
                 raise requests.exceptions.ConnectionError("sem manifest")

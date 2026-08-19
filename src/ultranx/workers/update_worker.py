@@ -20,6 +20,7 @@ uma flag; as funções de core a consultam entre chunks/entradas. Nunca usamos
 from __future__ import annotations
 
 import logging
+from datetime import date
 from pathlib import Path
 
 from PyQt6.QtCore import QThread, pyqtSignal
@@ -61,12 +62,14 @@ class UpdateWorker(QThread):
         package: PackageInfo,
         version: str,
         settings: Settings,
+        released: date | None = None,
         parent=None,
     ) -> None:
         super().__init__(parent)
         self._sd_root = Path(sd_root)
         self._package = package
         self._version = version
+        self._released = released
         self._settings = settings
         self._cancelled = False
         self._stage = "preparação"
@@ -148,6 +151,7 @@ class UpdateWorker(QThread):
             version=self._version,
             sd_root=self._sd_root,
             settings=self._settings,
+            released=self._released,
             download_progress=self._on_download,
             extract_progress=self._on_extract,
             should_cancel=self._should_cancel,

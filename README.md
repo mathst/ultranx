@@ -77,6 +77,27 @@ O servidor precisa expor:
 - `manifest.json` — opcional, mas é o que habilita a validação por checksum. Veja
   [`docs/manifest.example.json`](docs/manifest.example.json).
 
+### Datas de versão
+
+A tela mostra três datas, e vale saber de onde cada uma vem:
+
+| Data | Origem |
+| --- | --- |
+| lançamento da versão publicada | `released` no `manifest.json`; sem manifest, cai no `Last-Modified` do `packetVersion.txt` remoto |
+| lançamento da versão instalada | segunda linha do `packetVersion.txt` do cartão, gravada na atualização |
+| gravação no cartão | data de modificação do `packetVersion.txt` |
+
+O `packetVersion.txt` gravado no cartão fica assim:
+
+```text
+1.4.2
+2026-08-15
+```
+
+Quem lê apenas a primeira linha continua funcionando, e cartão atualizado à mão
+(sem a segunda linha) mostra `—` no lançamento e ainda assim exibe a data de
+gravação.
+
 Sem `manifest.json` o app monta as URLs por convenção
 (`rox-<modalidade>-<versão>.zip`) e avisa na tela que o download não pôde ser
 verificado.

@@ -9,11 +9,13 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 
 import psutil
 
 from ..config import SWITCH_ROOT_MARKERS, VERSION_FILE_NAME
+from .dates import file_date, parse_iso_date
 from .errors import DriveError
 from .paths import safe_resolve
 
@@ -28,6 +30,24 @@ _REMOVABLE_OPTS: frozenset[str] = frozenset({"removable", "hotplug"})
 
 
 @dataclass(frozen=True, slots=True)
+class LocalState:
+    """Estado gravado no cartão: versão, data de lançamento e de instalação.
+
+    ``released`` vem da segunda linha de ``packetVersion.txt`` (ausente em
+    cartões atualizados manualmente ou por versões antigas do UltraNX).
+    ``installed_at`` é o mtime do arquivo — quando a gravação aconteceu.
+    """
+
+    version: str | None
+    released: date | None
+    installed_at: date | None
+
+    @property
+    def is_installed(self) -> bool:
+        return self.version is not None
+
+
+@dataclass(frozen=True, slots=True)
 class DriveCandidate:
     """Uma mídia candidata, já com o veredito de "parece um SD de Switch"."""
 
@@ -35,15 +55,20 @@ class DriveCandidate:
     device: str
     fstype: str
     is_switch_root: bool
-    local_version: str | None
+    local_state: LocalState
     total_bytes: int
     free_bytes: int
+
+    @property
+    def local_version(self) -> str | None:
+        """Versão instalada, ou ``None`` em cartão virgem."""
+        return self.local_state.version
 
     @property
     def label(self) -> str:
         """Rótulo curto para exibição em combo box."""
         marker = "SD Switch" if self.is_switch_root else "removível"
-        version = f" — v{self.local_version}" if self.local_version else ""
+        version = f" — v{self.local_state.version}" if self.local_state.version else ""
         return f"{self.mountpoint} ({self.fstype}, {marker}){version}"
 
 
@@ -65,20 +90,33 @@ def _fstype_accepted(fstype: str) -> bool:
     return fstype.strip().casefold() in _ACCEPTED_FSTYPES
 
 
-def read_local_version(root: Path) -> str | None:
+def read_local_state(root: Path) -> LocalState:
     """Lê ``packetVersion.txt`` na raiz do SD.
 
-    Retorna ``None`` quando ausente, ilegível ou vazio — jamais levanta, porque
-    "sem versão" é um estado válido (SD virgem).
+    Jamais levanta: "sem versão" é um estado válido (SD virgem). Formato:
+
+    .. code-block:: text
+
+       1.4.2          <- linha 1: versão instalada
+       2026-08-15     <- linha 2 (opcional): data de lançamento dessa versão
     """
     version_file = safe_resolve(root) / VERSION_FILE_NAME
     try:
         content = version_file.read_text(encoding="utf-8", errors="replace")
     except (OSError, ValueError):
         logger.debug("packetVersion.txt ausente ou ilegível em %s", root)
-        return None
-    stripped = content.strip().splitlines()
-    return stripped[0].strip() if stripped and stripped[0].strip() else None
+        return LocalState(None, None, None)
+
+    lines = [line.strip() for line in content.splitlines()]
+    version = lines[0] if lines and lines[0] else None
+    released = parse_iso_date(lines[1]) if len(lines) > 1 else None
+    installed_at = file_date(version_file) if version else None
+    return LocalState(version=version, released=released, installed_at=installed_at)
+
+
+def read_local_version(root: Path) -> str | None:
+    """Atalho para a versão instalada. ``None`` em cartão virgem."""
+    return read_local_state(root).version
 
 
 def looks_like_switch_root(root: Path) -> bool:
@@ -104,7 +142,7 @@ def _describe(mountpoint: Path, device: str, fstype: str) -> DriveCandidate:
         device=device,
         fstype=fstype,
         is_switch_root=looks_like_switch_root(mountpoint),
-        local_version=read_local_version(mountpoint),
+        local_state=read_local_state(mountpoint),
         total_bytes=total,
         free_bytes=free,
     )

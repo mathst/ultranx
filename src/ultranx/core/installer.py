@@ -20,11 +20,13 @@ import tempfile
 import zipfile
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 
 import requests
 
 from ..config import DOWNLOAD_CHUNK_SIZE, VERSION_FILE_NAME, Settings
+from .dates import to_iso
 from .errors import (
     DriveDisconnectedError,
     InstallError,
@@ -53,6 +55,7 @@ class InstallResult:
     """Resultado de uma instalação bem-sucedida."""
 
     version: str
+    released: date | None
     modality: str
     extracted_entries: int
     payload_bytes: int
@@ -273,14 +276,18 @@ def extract_payload(
     return written
 
 
-def write_version_file(sd_root: Path, version: str) -> None:
+def write_version_file(sd_root: Path, version: str, released: date | None = None) -> None:
     """Grava e revalida ``packetVersion.txt``.
+
+    Formato: versão na primeira linha e, quando conhecida, a data de lançamento
+    em ISO-8601 na segunda. Quem lê só a primeira linha continua funcionando.
 
     A releitura é obrigatória: em FAT32 uma escrita "bem-sucedida" pode não
     persistir se o cartão for removido antes do flush.
     """
     target = safe_resolve(sd_root) / VERSION_FILE_NAME
-    payload = f"{version.strip()}\n"
+    iso = to_iso(released)
+    payload = f"{version.strip()}\n" if iso is None else f"{version.strip()}\n{iso}\n"
 
     try:
         with target.open("w", encoding="utf-8", newline="\n") as sink:
@@ -298,13 +305,17 @@ def write_version_file(sd_root: Path, version: str) -> None:
     except OSError as exc:
         raise InstallError(f"Falha ao gravar '{VERSION_FILE_NAME}': {exc}.") from exc
 
-    confirmed = target.read_text(encoding="utf-8", errors="replace").strip()
+    # Valida pela primeira linha: a data é metadado, a versão é o estado.
+    written = target.read_text(encoding="utf-8", errors="replace").splitlines()
+    confirmed = written[0].strip() if written else ""
     if confirmed != version.strip():
         raise InstallError(
             f"Validação falhou: '{VERSION_FILE_NAME}' contém '{confirmed}' em vez "
             f"de '{version.strip()}'. Reexecute a atualização."
         )
-    logger.info("packetVersion.txt gravado e validado: %s", version)
+    logger.info(
+        "packetVersion.txt gravado e validado: %s (lançamento: %s)", version, iso or "—"
+    )
 
 
 def install_payload(
@@ -312,6 +323,7 @@ def install_payload(
     version: str,
     sd_root: Path,
     settings: Settings,
+    released: date | None = None,
     download_progress: DownloadProgress | None = None,
     extract_progress: ExtractProgress | None = None,
     should_cancel: CancelCheck | None = None,
@@ -326,12 +338,13 @@ def install_payload(
     )
     try:
         entries = extract_payload(archive_path, sd_root, extract_progress, should_cancel)
-        write_version_file(sd_root, version)
+        write_version_file(sd_root, version, released)
     finally:
         _discard(archive_path)
 
     return InstallResult(
         version=version,
+        released=released,
         modality=package.modality,
         extracted_entries=entries,
         payload_bytes=payload_bytes,

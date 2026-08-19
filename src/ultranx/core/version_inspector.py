@@ -14,6 +14,7 @@ import json
 import logging
 import re
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 
 import requests
@@ -23,7 +24,8 @@ from ..config import (
     MODALITY_STANDARD,
     Settings,
 )
-from .drive_detector import read_local_version
+from .dates import parse_http_date, parse_iso_date
+from .drive_detector import LocalState, read_local_state
 from .errors import NetworkError, RemoteDataError
 
 logger = logging.getLogger(__name__)
@@ -45,24 +47,35 @@ class PackageInfo:
 
 @dataclass(frozen=True, slots=True)
 class VersionReport:
-    """Resultado completo da inspeção (imutável)."""
+    """Resultado completo da inspeção (imutável).
 
-    local_version: str | None
+    ``remote_released`` é a data de lançamento da versão publicada: vem de
+    ``released`` no manifest e, na falta dele, do ``Last-Modified`` de
+    ``packetVersion.txt``. ``local`` traz a versão instalada, a data de
+    lançamento dela e quando foi gravada no cartão.
+    """
+
+    local: LocalState
     remote_version: str
+    remote_released: date | None
     packages: tuple[PackageInfo, ...]
     manifest_available: bool
 
     @property
+    def local_version(self) -> str | None:
+        return self.local.version
+
+    @property
     def update_available(self) -> bool:
-        if self.local_version is None:
+        if self.local.version is None:
             return True
-        return compare_versions(self.remote_version, self.local_version) > 0
+        return compare_versions(self.remote_version, self.local.version) > 0
 
     @property
     def is_downgrade(self) -> bool:
-        if self.local_version is None:
+        if self.local.version is None:
             return False
-        return compare_versions(self.remote_version, self.local_version) < 0
+        return compare_versions(self.remote_version, self.local.version) < 0
 
     def package_for(self, modality: str) -> PackageInfo:
         for package in self.packages:
@@ -119,8 +132,12 @@ def _first_line(text: str) -> str:
     return lines[0]
 
 
-def fetch_remote_version(settings: Settings) -> str:
-    """Baixa e valida a versão publicada."""
+def fetch_remote_version(settings: Settings) -> tuple[str, date | None]:
+    """Baixa e valida a versão publicada.
+
+    Devolve ``(versão, data)``, onde a data vem do cabeçalho ``Last-Modified``:
+    é a única pista de data quando o servidor não publica manifest.
+    """
     response = _get(settings.version_url, settings)
     if len(response.content) > _MAX_TEXT_BYTES:
         raise RemoteDataError(
@@ -129,7 +146,8 @@ def fetch_remote_version(settings: Settings) -> str:
     version = _first_line(response.text)
     if len(version) > 64 or not any(ch.isdigit() for ch in version):
         raise RemoteDataError(f"Versão remota inesperada: '{version[:64]}'.")
-    return version
+    published = parse_http_date(response.headers.get("Last-Modified"))
+    return version, published
 
 
 def _default_packages(settings: Settings, version: str) -> tuple[PackageInfo, ...]:
@@ -175,18 +193,24 @@ def _parse_package(modality: str, raw: object, base_url: str) -> PackageInfo | N
     return PackageInfo(modality=modality, url=url, sha256=sha256, size_bytes=size)
 
 
-def fetch_manifest(settings: Settings, version: str) -> tuple[PackageInfo, ...]:
-    """Baixa o manifest opcional. Falha de rede/JSON degrada para convenção."""
+def fetch_manifest(
+    settings: Settings, version: str
+) -> tuple[tuple[PackageInfo, ...], date | None]:
+    """Baixa o manifest opcional.
+
+    Devolve ``(pacotes, data_de_lançamento)``. Falha de rede ou JSON inválido
+    degrada para convenção, sem derrubar a inspeção.
+    """
     try:
         response = _get(settings.manifest_url, settings)
         document = response.json()
     except (NetworkError, json.JSONDecodeError, ValueError) as exc:
         logger.info("manifest.json indisponível (%s); usando URLs por convenção.", exc)
-        return ()
+        return (), None
 
     if not isinstance(document, dict):
         logger.warning("manifest.json não é um objeto JSON; ignorando.")
-        return ()
+        return (), None
 
     manifest_version = str(document.get("version", version)).strip()
     if manifest_version and compare_versions(manifest_version, version) != 0:
@@ -196,10 +220,12 @@ def fetch_manifest(settings: Settings, version: str) -> tuple[PackageInfo, ...]:
             version,
         )
 
+    released = parse_iso_date(document.get("released"))
+
     raw_packages = document.get("packages")
     if not isinstance(raw_packages, dict):
         logger.warning("manifest.json sem objeto 'packages'; ignorando.")
-        return ()
+        return (), released
 
     parsed = [
         package
@@ -211,27 +237,33 @@ def fetch_manifest(settings: Settings, version: str) -> tuple[PackageInfo, ...]:
         )
         is not None
     ]
-    return tuple(parsed)
+    return tuple(parsed), released
 
 
 def inspect(sd_root: Path, settings: Settings) -> VersionReport:
     """Executa a inspeção completa. Chamado de dentro de uma ``QThread``."""
-    remote_version = fetch_remote_version(settings)
-    packages = fetch_manifest(settings, remote_version)
+    remote_version, published_at = fetch_remote_version(settings)
+    packages, released = fetch_manifest(settings, remote_version)
     manifest_available = bool(packages)
     if not manifest_available:
         packages = _default_packages(settings, remote_version)
 
     report = VersionReport(
-        local_version=read_local_version(sd_root),
+        local=read_local_state(sd_root),
         remote_version=remote_version,
+        # A data do manifest é autoritativa; Last-Modified é só o fallback.
+        remote_released=released or published_at,
         packages=packages,
         manifest_available=manifest_available,
     )
     logger.info(
-        "Inspeção: local=%s remoto=%s manifest=%s modalidades=%s",
-        report.local_version,
+        "Inspeção: local=%s (lançada %s, instalada %s) remoto=%s (lançada %s) "
+        "manifest=%s modalidades=%s",
+        report.local.version,
+        report.local.released,
+        report.local.installed_at,
         report.remote_version,
+        report.remote_released,
         manifest_available,
         ",".join(report.available_modalities),
     )

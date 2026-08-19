@@ -90,8 +90,14 @@ cai para o temp do sistema quando não há. É sempre removido, inclusive em fal
 
 ## Estado
 
-Nenhum banco. A versão instalada é a primeira linha de `packetVersion.txt` na
-raiz do cartão, gravada com `fsync` e **relida para confirmação** — em FAT32 uma
+Nenhum banco. `packetVersion.txt` na raiz do cartão guarda a versão na primeira
+linha e a data de lançamento dela, em ISO-8601, na segunda. A validação pós-escrita
+compara **só a primeira linha**: a versão é o estado, a data é metadado.
+
+A data de instalação não é gravada em lugar nenhum — é o mtime do arquivo. Isso
+evita ler o relógio dentro do domínio e mantém os testes determinísticos.
+
+O arquivo é gravado com `fsync` e **relido para confirmação** — em FAT32 uma
 escrita aparentemente bem-sucedida pode não persistir se o cartão sair antes do
 flush.
 
