@@ -64,17 +64,19 @@ def test_normalize_base_url_rejects_invalid(raw):
 
 
 def test_placeholder_detection():
-    assert is_placeholder_url(DEFAULT_BASE_URL)
+    assert is_placeholder_url("https://example.invalid/ultranx")
+    assert not is_placeholder_url(DEFAULT_BASE_URL)
     assert not is_placeholder_url("https://host/rox")
 
 
 # --- leitura do arquivo -----------------------------------------------------
 
 
-def test_no_config_file_means_placeholder():
+def test_no_config_file_falls_back_to_embedded_default():
+    """Este fork embute um servidor real como padrão; ver DEFAULT_BASE_URL."""
     settings = load_settings()
     assert settings.base_url == DEFAULT_BASE_URL
-    assert not settings.is_configured
+    assert settings.is_configured
 
 
 def test_user_config_file_is_used(_isolated):

@@ -31,7 +31,9 @@ VERSION_FILE_NAME: Final[str] = "packetVersion.txt"
 
 # --- Endpoint remoto ---------------------------------------------------------
 # Placeholder: sem configuração, o app avisa na tela em vez de tentar baixar.
-DEFAULT_BASE_URL: Final[str] = "https://example.invalid/ultranx"
+DEFAULT_BASE_URL: Final[str] = (
+    "https://www.mediafire.com/folder/5zz3azv8dk409/Nintendo+Switch"
+)
 PLACEHOLDER_HOST: Final[str] = "example.invalid"
 ENV_BASE_URL: Final[str] = "ULTRANX_BASE_URL"
 ENV_TIMEOUT: Final[str] = "ULTRANX_HTTP_TIMEOUT"
