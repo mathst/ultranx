@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import logging
 import shutil
+import stat
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
@@ -213,26 +214,68 @@ def build_plan(sd_root: Path) -> CleanupPlan:
     return plan
 
 
+def _do_remove(path: Path, is_dir: bool) -> None:
+    if is_dir:
+        shutil.rmtree(path)
+    else:
+        path.unlink()
+
+
+def _clear_readonly(path: Path) -> None:
+    """Limpa o atributo somente-leitura de ``path`` e de tudo abaixo dele.
+
+    Cartões formatados no Windows carregam esse atributo do lado do host, e
+    homebrews antigos o deixam ligado em pastas próprias (ex.: cache de ícones).
+    Isso barra a remoção com ``PermissionError`` mesmo com o processo tendo
+    permissão de escrita plena no cartão — sem essa limpeza, um único arquivo
+    read-only travaria a atualização inteira nessa etapa.
+    """
+    candidates: Iterable[Path] = (*path.rglob("*"), path) if path.is_dir() else (path,)
+    for candidate in candidates:
+        try:
+            mode = candidate.stat().st_mode
+            if not mode & stat.S_IWRITE:
+                candidate.chmod(mode | stat.S_IWRITE)
+        except OSError:
+            pass
+
+
+def _raise_removal_error(item: CleanupItem, exc: OSError) -> None:
+    # ENOENT no pai / dispositivo ausente aparece como OSError genérico.
+    if not item.path.parent.exists():
+        raise DriveDisconnectedError(
+            f"O cartão foi desconectado ao remover '{item.path.name}'."
+        ) from exc
+    raise SanitizerError(
+        f"Falha ao remover '{item.path}': {exc.__class__.__name__}: {exc}."
+    ) from exc
+
+
 def _remove(item: CleanupItem) -> None:
-    """Remove um item convertendo exceções de OS em erros de domínio."""
+    """Remove um item convertendo exceções de OS em erros de domínio.
+
+    Numa primeira falha por permissão, limpa o atributo somente-leitura e
+    tenta de novo antes de desistir (ver :func:`_clear_readonly`).
+    """
     try:
-        if item.is_dir:
-            shutil.rmtree(item.path)
-        else:
-            item.path.unlink()
+        _do_remove(item.path, item.is_dir)
+        return
+    except FileNotFoundError:
+        logger.debug("%s já não existia; seguindo.", item.path)
+        return
+    except PermissionError:
+        _clear_readonly(item.path)
+    except OSError as exc:
+        _raise_removal_error(item, exc)
+
+    try:
+        _do_remove(item.path, item.is_dir)
     except FileNotFoundError:
         logger.debug("%s já não existia; seguindo.", item.path)
     except PermissionError as exc:
         raise PermissionDeniedError(f"Sem permissão para remover '{item.path}'.") from exc
     except OSError as exc:
-        # ENOENT no pai / dispositivo ausente aparece como OSError genérico.
-        if not item.path.parent.exists():
-            raise DriveDisconnectedError(
-                f"O cartão foi desconectado ao remover '{item.path.name}'."
-            ) from exc
-        raise SanitizerError(
-            f"Falha ao remover '{item.path}': {exc.__class__.__name__}: {exc}."
-        ) from exc
+        _raise_removal_error(item, exc)
 
 
 def execute_plan(

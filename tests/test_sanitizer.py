@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import stat
 from pathlib import Path
 
 import pytest
@@ -174,6 +175,23 @@ def test_execute_plan_removes_and_preserves(sd: Path):
     assert (sd / "switch" / "NX-Activity-Log").is_dir()
     # config/ é substituída pelo pacote: presets antigos não podem sobrar.
     assert not (sd / "config").exists()
+
+
+def test_execute_plan_clears_readonly_and_retries(sd: Path):
+    """Item read-only (comum em cache de ícones de homebrew) não deve travar a limpeza."""
+    target = sd / "switch" / "tinfoil"
+    child = target / "icons"
+    child.mkdir()
+    locked = child / "arquivo.bin"
+    locked.write_bytes(b"x")
+    locked.chmod(stat.S_IREAD)
+    child.chmod(stat.S_IREAD)
+
+    plan = build_plan(sd)
+    removed = execute_plan(plan)
+
+    assert target in removed
+    assert not target.exists()
 
 
 def test_execute_plan_reports_progress(sd: Path):
