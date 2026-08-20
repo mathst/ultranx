@@ -85,6 +85,31 @@ def _serve(monkeypatch, payload: bytes, **kwargs):
     )
 
 
+# --- escolha do diretório temporário -----------------------------------------
+
+
+def test_choose_temp_dir_prefers_system_temp_when_it_has_room(monkeypatch, tmp_path):
+    sd_root = tmp_path / "sd"
+    sd_root.mkdir()
+    system_temp = tmp_path / "systemp"
+    system_temp.mkdir()
+    monkeypatch.setattr(installer.tempfile, "gettempdir", lambda: str(system_temp))
+    monkeypatch.setattr(installer, "free_bytes", lambda path: 10_000_000_000)
+
+    assert installer._choose_temp_dir(sd_root, 1_000_000) == system_temp
+
+
+def test_choose_temp_dir_falls_back_to_sd_when_system_temp_is_tight(monkeypatch, tmp_path):
+    sd_root = tmp_path / "sd"
+    sd_root.mkdir()
+    system_temp = tmp_path / "systemp"
+    system_temp.mkdir()
+    monkeypatch.setattr(installer.tempfile, "gettempdir", lambda: str(system_temp))
+    monkeypatch.setattr(installer, "free_bytes", lambda path: 1)
+
+    assert installer._choose_temp_dir(sd_root, 1_000_000) == sd_root.resolve()
+
+
 # --- download ---------------------------------------------------------------
 
 

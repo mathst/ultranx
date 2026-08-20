@@ -55,6 +55,31 @@ def test_extract_writes_every_entry(tmp_path: Path, fabrica):
     assert (sd / "switch" / "daybreak.nro").exists()
 
 
+def _muitos(prefixo: str, quantidade: int) -> dict[str, bytes]:
+    return {
+        f"switch/{prefixo}/arquivo_{i:04d}.bin": f"conteudo-{i}".encode()
+        for i in range(quantidade)
+    }
+
+
+@pytest.mark.parametrize(
+    "empacotar", [lambda p, c: _zip_named(p, c), lambda p, c: _sevenzip_named(p, c)]
+)
+def test_extract_parallel_writes_every_entry_correctly(tmp_path: Path, empacotar):
+    """Com dezenas de entradas (exercita de fato as threads), nada se perde
+    nem se mistura entre partições/arquivos concorrentes."""
+    conteudo = _muitos("muitos", 97)  # numero nao redondo: particoes desiguais
+    arquivo = empacotar(tmp_path, conteudo)
+    sd = tmp_path / "sd"
+    sd.mkdir()
+
+    gravadas = extract_archive(arquivo, sd)
+
+    assert gravadas == len(conteudo)
+    for nome, dados in conteudo.items():
+        assert (sd / nome).read_bytes() == dados
+
+
 def test_extract_zip_blocks_traversal(tmp_path: Path):
     """Entrada com '..' é descartada em vez de escapar da raiz (zip-slip)."""
     arquivo = _zip(tmp_path, malicioso=True)
@@ -173,6 +198,72 @@ def test_empty_zip_is_rejected(tmp_path: Path):
         pass
     with pytest.raises(InstallError, match="vazio"):
         extract_archive(arquivo, tmp_path)
+
+
+def _zip_named(tmp_path: Path, conteudo: dict[str, bytes]) -> Path:
+    destino = tmp_path / "pacote.zip"
+    with zipfile.ZipFile(destino, "w") as arq:
+        for nome, dados in conteudo.items():
+            arq.writestr(nome, dados)
+    return destino
+
+
+def _sevenzip_named(tmp_path: Path, conteudo: dict[str, bytes]) -> Path:
+    py7zr = pytest.importorskip("py7zr")
+    destino = tmp_path / "pacote.7z"
+    with py7zr.SevenZipFile(destino, mode="w") as arq:
+        for nome, dados in conteudo.items():
+            arq.writef(io.BytesIO(dados), nome)
+    return destino
+
+
+@pytest.mark.parametrize("empacotar", [_zip_named, _sevenzip_named])
+def test_extract_unwraps_single_top_folder_with_unknown_name(tmp_path: Path, empacotar):
+    """Pacote 'compactar pasta' do MediaFire: tudo dentro de uma pasta-título.
+
+    Sem subir o conteúdo, atmosphere/switch ficam presos em
+    'PacoteQualquer/' e nunca chegam na raiz — é exatamente o bug real.
+    """
+    arquivo = empacotar(
+        tmp_path,
+        {
+            "PacoteQualquer/atmosphere/package3": b"pacote novo",
+            "PacoteQualquer/switch/daybreak.nro": b"app",
+        },
+    )
+    sd = tmp_path / "sd"
+    sd.mkdir()
+
+    extract_archive(arquivo, sd)
+
+    assert (sd / "atmosphere" / "package3").read_bytes() == b"pacote novo"
+    assert (sd / "switch" / "daybreak.nro").exists()
+    assert not (sd / "PacoteQualquer").exists()
+
+
+def test_extract_unwraps_and_merges_into_existing_folders(tmp_path: Path):
+    """A mesclagem preserva o que já existe em vez de apagar (ex.: switch/JKSV)."""
+    arquivo = _zip_named(tmp_path, {"Invólucro/switch/daybreak.nro": b"app novo"})
+    sd = tmp_path / "sd"
+    (sd / "switch" / "JKSV").mkdir(parents=True)
+    (sd / "switch" / "JKSV" / "backup.sav").write_bytes(b"save")
+
+    extract_archive(arquivo, sd)
+
+    assert (sd / "switch" / "daybreak.nro").read_bytes() == b"app novo"
+    assert (sd / "switch" / "JKSV" / "backup.sav").read_bytes() == b"save"
+    assert not (sd / "Invólucro").exists()
+
+
+def test_extract_does_not_unwrap_legitimate_single_root_folder(tmp_path: Path):
+    """Pacote que só toca 'atmosphere/' tem um nome de topo por motivo real."""
+    arquivo = _zip_named(tmp_path, {"atmosphere/package3": b"so isso mesmo"})
+    sd = tmp_path / "sd"
+    sd.mkdir()
+
+    extract_archive(arquivo, sd)
+
+    assert (sd / "atmosphere" / "package3").read_bytes() == b"so isso mesmo"
 
 
 def test_free_bytes_of_real_dir(tmp_path: Path):

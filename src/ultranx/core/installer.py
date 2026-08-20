@@ -2,9 +2,14 @@
 
 Sequência: baixar para arquivo temporário (nunca direto sobre o SD final),
 validar integridade, extrair sobrescrevendo a raiz, gravar
-``packetVersion.txt`` e reler para confirmar. O temporário fica no próprio SD
-quando há espaço, para que a extração seja um move local; caso contrário usa o
-temp do sistema.
+``packetVersion.txt`` e reler para confirmar. O temporário fica no temp do
+sistema (disco local, normalmente bem mais rápido que o cartão via leitor
+USB) quando há espaço; só cai para o próprio SD se o disco local estiver
+apertado. Extrair sempre lê o arquivo baixado e escreve o conteúdo
+descompactado — nunca é um simples move, mesmo com os dois no mesmo drive —
+então manter o temporário fora do SD evita que ele sofra a escrita do
+download e a releitura na extração além da escrita final, cortando o
+tráfego pelo canal mais lento a menos da metade.
 
 Todo callback de progresso é opcional e síncrono: os workers PyQt6 apenas
 repassam para ``pyqtSignal.emit``.
@@ -66,17 +71,18 @@ class InstallResult:
 
 
 def _choose_temp_dir(sd_root: Path, expected_size: int | None) -> Path:
-    """Prefere o próprio SD; cai para o temp do sistema se faltar espaço."""
-    root = safe_resolve(sd_root)
+    """Prefere o temp do sistema; cai para o próprio SD se faltar espaço lá."""
+    system_temp = Path(tempfile.gettempdir())
     needed = int((expected_size or 0) * _SAFETY_MARGIN)
-    if expected_size is None or free_bytes(root) > needed:
-        return root
+    if expected_size is None or free_bytes(system_temp) > needed:
+        return system_temp
+    root = safe_resolve(sd_root)
     logger.info(
-        "Espaço insuficiente no SD para o temporário (%s necessários); usando %s.",
+        "Espaço insuficiente em %s para o temporário (%s necessários); usando o próprio SD.",
+        system_temp,
         human_size(needed),
-        tempfile.gettempdir(),
     )
-    return Path(tempfile.gettempdir())
+    return root
 
 
 def download_payload(
