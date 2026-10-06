@@ -132,6 +132,14 @@ Igual a `src/ultranx/config.py` (`PRESERVE_DIRS`, `PRESERVE_SUBPATHS`,
 - `ultranx-nx` — staging e logs no console;
 - `hbmenu.nro` — sem ele o usuário não volta ao app.
 
+Dois níveis de proteção, porque "não apagar" e "não escrever" são coisas
+diferentes:
+
+| Nível | Caminhos | Limpeza | Extração do pacote |
+| --- | --- | --- | --- |
+| **Intocável** | `Nintendo`, `emummc`, `*.keys`, `*.sav`, `switch/JKSV`, `ultranx-nx/` (staging) | nunca apaga | entrada descartada (W21) |
+| **Não apagar** | `hbmenu.nro`, `switch/ultranx-nx`, `switch/EdiZon`, `switch/NX-Activity-Log`, `cleanup.preserve` | nunca apaga | **pode sobrescrever** — é assim que o pacote atualiza o hbmenu e o próprio app |
+
 Fonte única: `docs/whitelist.json` gerado de `config.py` e convertido em header
 C no build (`include/ultranx/whitelist_gen.h`), para PC e console não divergirem.
 
