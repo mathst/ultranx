@@ -15,9 +15,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Portlibs
-        run: dkp-pacman -Sy --noconfirm --needed switch-curl switch-zlib
-
+      # Portlibs (switch-curl, switch-zlib) já vêm na imagem; pkg.devkitpro.org
+      # devolve 403 para runners de CI, então não há dkp-pacman aqui.
       - name: Build spike
         run: make -C homebrew/spike
 
