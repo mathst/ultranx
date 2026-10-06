@@ -108,7 +108,7 @@ Saída: anotações em `specs/architecture.md` (tempos, versões das portlibs).
 | ID | Tarefa | Critério de aceite |
 | --- | --- | --- |
 | F1.1 | Scaffold `homebrew/`, Makefile com alvos `nro` e `test` | `make` e `make test` passam no CI |
-| F1.2 | Headers de contrato em `include/ultranx/` (`manifest.h`, `plan.h`, `paths.h`, `version.h`, `net.h`, `archive.h`, `system.h`, `fs.h`, `ui.h`, `errors.h`); `plan.h` recebe listagem injetada (`UnxListDirFn`) para testar no host | compilam; assinaturas batem com `specs/architecture.md` |
+| F1.2 | Headers de contrato em `include/ultranx/` (`manifest.h`, `plan.h`, `paths.h`, `version.h`, `net.h`, `archive.h`, `system.h`, `fs.h`, `ui.h`, `errors.h`) + `build_config.h` (URL fixa — já criado); `plan.h` recebe listagem injetada (`UnxListDirFn`) para testar no host | compilam; assinaturas batem com `specs/architecture.md` |
 | F1.3 | `docs/manifest.v2.schema.json` + exemplos v1/v2 | validados por `jsonschema` no CI |
 | F1.4 | CI `.github/workflows/homebrew.yml`: job host (testes+cobertura) e job `devkitpro/devkita64` (build `.nro`); tag `homebrew-v*` publica release | ambos verdes |
 

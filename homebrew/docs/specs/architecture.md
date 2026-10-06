@@ -253,7 +253,8 @@ typedef struct {
     char       warnings[8][128]; size_t warning_count; /* itens descartados por whitelist etc. */
 } UnxManifest;
 
-/* base_url resolve archives[].url relativas. allow_http vem do config.json. */
+/* base_url resolve archives[].url relativas; resultado deve começar com
+ * UNX_ALLOWED_ARCHIVE_PREFIX. allow_http só é true em build DEV=1 (dev.json). */
 bool unx_manifest_parse(const char *json, size_t len, const char *base_url,
                         bool allow_http, UnxManifest **out, UnxError *err);
 void unx_manifest_free(UnxManifest *m);

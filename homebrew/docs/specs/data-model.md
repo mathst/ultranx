@@ -17,7 +17,7 @@ compartilhado entre o homebrew e o app de PC.
       "label": "Pacote Padrão",
       "archives": [
         {
-          "url": "https://github.com/OWNER/rox-pack/releases/download/v1.5.0/rox-standard-1.5.0.part1.zip",
+          "url": "https://github.com/mathst/rox-pack/releases/download/v1.5.0/rox-standard-1.5.0.part1.zip",
           "sha256": "<64 hex minúsculos>",
           "size": 734003200,
           "extracted_size": 812000000
@@ -78,8 +78,9 @@ aceitar v2; homebrew aceita ambos.
 1. JSON não-objeto, `version` ausente/fora do padrão.
 2. Nenhuma modalidade válida em `packages`.
 3. `archives` vazio, > 16, ou item sem `url`/`size`; `sha256` ausente em v2.
-4. `url` com esquema diferente de `https` (exceto `http` para host de rede
-   local quando `config.json` tiver `allow_http: true`).
+4. `archives[].url` (já resolvida) que não comece com
+   `UNX_ALLOWED_ARCHIVE_PREFIX` — isso também barra `http://`. Só build
+   `DEV=1` com `allow_http` em `dev.json` relaxa a regra.
 5. Caminho em `cleanup.*` ou `reboot_payload` que: seja absoluto, contenha
    `..`, `\`, `:`, componente vazio, ou caractere de controle; tenha > 4
    componentes; ou > 255 chars.
@@ -160,7 +161,7 @@ confirmar. Ausente ⇒ "nenhuma versão instalada".
 
 ```
 ultranx-nx/
-  config.json              # manifest_url, allow_http (opcional)
+  dev.json                 # só lido em build DEV=1; ignorado no release
   staging/
     state.json             # progresso da aplicação
     APPLYING               # marcador: existe só entre início da limpeza e fim da gravação da versão
@@ -191,10 +192,20 @@ Regras:
 - Staging é apagado só após `packetVersion.txt` confirmado.
 - `state.json` gravado com escrita em arquivo temporário + rename.
 
-## Configuração do homebrew (`ultranx-nx/config.json`)
+## Configuração do homebrew — fixa no binário
 
-```json
-{ "manifest_url": "https://github.com/OWNER/rox-pack/releases/latest/download/manifest.json" }
-```
+Não há arquivo de configuração no cartão. `include/ultranx/build_config.h`
+define, em tempo de compilação:
 
-Ausente ⇒ URL embutida no build (`ULTRANX_MANIFEST_URL` no Makefile).
+| Constante | Valor |
+| --- | --- |
+| `UNX_MANIFEST_URL` | `https://github.com/mathst/rox-pack/releases/latest/download/manifest.json` |
+| `UNX_ALLOWED_ARCHIVE_PREFIX` | `https://github.com/mathst/rox-pack/releases/download/` |
+
+Só o dono do repositório `mathst/rox-pack` muda o que o app instala
+(publicando release nova); só um build novo muda o endereço. O usuário final
+instala o `.nro`, abre, e o app verifica a atualização sozinho.
+
+Exceção de desenvolvimento: build com `make DEV=1` define `UNX_DEV_BUILD` e
+lê `sdmc:/ultranx-nx/dev.json` (`{"manifest_url": "...", "allow_http": true}`)
+para testar contra servidor local. O CI de release nunca usa `DEV=1`.

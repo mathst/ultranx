@@ -9,7 +9,7 @@ a **capacidade do console de dar boot**.
 
 | # | Categoria | Ameaça | Mitigação |
 | --- | --- | --- | --- |
-| T1 | Spoofing | MITM na rede (Wi-Fi público, DNS envenenado) entrega manifest/zip falso | TLS com `CURLOPT_SSL_VERIFYPEER=1` e `VERIFYHOST=2`, backend libnx (CA do sistema); `http://` rejeitado salvo `allow_http: true` em `config.json` local |
+| T1 | Spoofing | MITM na rede (Wi-Fi público, DNS envenenado) entrega manifest/zip falso | TLS com `CURLOPT_SSL_VERIFYPEER=1` e `VERIFYHOST=2`, backend libnx (CA do sistema); URL do manifest fixa no binário; partes só aceitas sob `UNX_ALLOWED_ARCHIVE_PREFIX` (https do GitHub); `http://` só em build `DEV=1` |
 | T2 | Tampering | Manifest adulterado manda apagar dado do usuário | Whitelist embutida vence sempre (§Whitelist); `preserve` do manifest só soma; caminho protegido é descartado com aviso, nunca removido |
 | T3 | Tampering | Zip trocado/corrompido em trânsito ou no host | SHA-256 de cada parte (`archives[].sha256`) conferido antes de renomear `.part`; nada é apagado antes de **todas** as partes conferirem |
 | T4 | Tampering | Servidor (conta GitHub) comprometido publica manifest + zip coerentes e maliciosos | Fora do alcance do SHA (o atacante controla os dois). Dano limitado pela whitelist e pelos limites de extração. Evolução: assinatura ed25519 (§Evolução) |
@@ -66,8 +66,16 @@ no host (miniz compila no host) **e** no `selftest` do console.
 
 ## Segredos
 
-O homebrew não tem segredo: URLs públicas, sem token. `config.json` não aceita
-credenciais. Repositório do pacote precisa ser público (download anônimo).
+O homebrew não tem segredo: URLs públicas, sem token. Repositório do pacote
+precisa ser público (download anônimo).
+
+## Origem fixa
+
+URL do manifest e prefixo das partes são constantes de
+`include/ultranx/build_config.h`; o `.nro` de release não lê configuração do
+cartão. Quem pode mudar o que é instalado: só quem publica release em
+`mathst/rox-pack`. Proteja essa conta (2FA, sem tokens de escrita soltos) —
+ela é a raiz de confiança até a assinatura ed25519 (evolução abaixo).
 
 ## Rate limit
 

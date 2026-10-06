@@ -10,7 +10,7 @@ vira erro. O formato do manifest está em [`data-model.md`](data-model.md).
 | --- | --- |
 | Biblioteca | libcurl (`switch-curl`, backend TLS da libnx) |
 | TLS | `CURLOPT_SSL_VERIFYPEER=1`, `CURLOPT_SSL_VERIFYHOST=2`; nunca desligado |
-| Redirects | `CURLOPT_FOLLOWLOCATION=1`, máximo 5; só `https://` (`CURLOPT_REDIR_PROTOCOLS_STR="https"`), exceto `http` quando `allow_http` |
+| Redirects | `CURLOPT_FOLLOWLOCATION=1`, máximo 5; só `https://` (`CURLOPT_REDIR_PROTOCOLS_STR="https"`), exceto `http` em build `DEV=1` com `allow_http` |
 | User-Agent | `UltraNX-NX/<versão do app>` (o GitHub rejeita requisição sem UA) |
 | Timeout de conexão | 15 s (`CURLOPT_CONNECTTIMEOUT`) |
 | Timeout de baixa vazão | aborta se < 1 KiB/s por 30 s (`LOW_SPEED_LIMIT`/`LOW_SPEED_TIME`); sem timeout total, porque partes de 1,9 GB levam muito tempo |
@@ -21,7 +21,7 @@ vira erro. O formato do manifest está em [`data-model.md`](data-model.md).
 ## 1. Manifest
 
 ```
-GET https://github.com/OWNER/rox-pack/releases/latest/download/manifest.json
+GET https://github.com/mathst/rox-pack/releases/latest/download/manifest.json
 User-Agent: UltraNX-NX/1.0.0
 ```
 
@@ -29,12 +29,17 @@ O GitHub responde `302` para `release-assets.githubusercontent.com` ou
 `objects.githubusercontent.com` (URL assinada e temporária); o curl segue o
 redirect. A resposta final esperada é `200` com JSON.
 
-- Limite de corpo: 1 MiB. Acima disso ⇒ `UNX_E_MANIFEST_INVALID`.
+- Limite de corpo: 256 KiB (`data-model.md` §Limites). Acima disso ⇒ `UNX_E_MANIFEST_INVALID`.
 - O conteúdo do `Content-Type` é ignorado (o GitHub serve `application/octet-stream`).
 - URLs relativas em `archives[].url` são resolvidas contra a URL **original**
   do manifest (antes dos redirects), não contra a URL assinada.
-- `latest/download/` sempre aponta para a release mais recente. Para fixar uma
-  versão em testes, `config.json` pode usar `releases/download/vX.Y.Z/manifest.json`.
+- `latest/download/` sempre aponta para a release mais recente: é assim que o
+  app "vê" atualização nova sem ser reinstalado. Para fixar uma versão em
+  testes, build `DEV=1` + `dev.json` com `releases/download/vX.Y.Z/manifest.json`.
+- Cada `archives[].url` resolvida precisa começar com
+  `UNX_ALLOWED_ARCHIVE_PREFIX` (`https://github.com/mathst/rox-pack/releases/download/`);
+  senão ⇒ `UNX_E_MANIFEST_INVALID`. Os redirects 302 para
+  `*.githubusercontent.com` acontecem depois dessa checagem e são permitidos.
 
 ## 2. `packetVersion.txt` remoto (opcional)
 
@@ -123,7 +128,7 @@ python tools/make_release.py \
   --released 2026-10-01 \
   --modality standard=build/rox-standard \
   --modality full=build/rox-full \
-  --base-url https://github.com/OWNER/rox-pack/releases/download/v1.5.0/ \
+  --base-url https://github.com/mathst/rox-pack/releases/download/v1.5.0/ \
   --out dist/v1.5.0 \
   [--part-size 1900M] [--cleanup cleanup.json] [--min-updater 1.0.0] \
   [--reboot-payload atmosphere/reboot_payload.bin]
@@ -165,5 +170,5 @@ Código de saída: `0` ok, `1` erro de entrada/validação, `2` erro de I/O.
 Publicação (manual ou CI):
 
 ```
-gh release create v1.5.0 dist/v1.5.0/* --repo OWNER/rox-pack
+gh release create v1.5.0 dist/v1.5.0/* --repo mathst/rox-pack
 ```

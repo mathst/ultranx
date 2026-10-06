@@ -22,7 +22,7 @@ Escopo e premissas em `../PLAN.md`; formatos em `data-model.md`.
 
 | ID | Requisito | Critério de aceite |
 | --- | --- | --- |
-| RF-01 | Ler `ultranx-nx/config.json` (ou URL embutida) e baixar o manifest v1/v2 | Sem `config.json`, usa `ULTRANX_MANIFEST_URL`; manifest inválido (regras de `data-model.md` §Validação) mostra a tela de Erro e não habilita a confirmação |
+| RF-01 | Ao abrir, verificar a atualização sozinho: baixar o manifest de `UNX_MANIFEST_URL` (fixa no binário, sem configuração do usuário) | Usuário só instala o `.nro` e abre; nenhum arquivo no cartão muda a origem no build de release; manifest inválido (regras de `data-model.md` §Validação) mostra a tela de Erro e não habilita a confirmação |
 | RF-02 | Ler `packetVersion.txt` local e comparar com `version` do manifest | Tela Início mostra "instalada", "publicada" e o estado (atualizado/desatualizado/nenhuma instalada); comparação numérica por componente (`1.10.0 > 1.9.0`) |
 | RF-03 | Escolher a modalidade (`standard`/`full`) entre as presentes no manifest | Só aparecem modalidades válidas; com uma só, ela já vem selecionada; o rótulo vem de `label` ou do fallback embutido |
 | RF-04 | Bloquear quando `min_updater` > versão do app | Tela de Erro "Atualize o UltraNX-NX" com a versão exigida; nenhuma ação destrutiva fica disponível |
@@ -45,7 +45,7 @@ Escopo e premissas em `../PLAN.md`; formatos em `data-model.md`.
 | --- | --- | --- |
 | RNF-01 | Segurança de dados | O manifest não remove `Nintendo/`, `emummc/`, `*.keys`, `*.sav`, `switch/JKSV`, `switch/ultranx-nx`, `hbmenu.nro` — testado em `test_plan.c` |
 | RNF-02 | Integridade | Toda parte passa por SHA-256 antes da extração; `.part` só é renomeado após conferir |
-| RNF-03 | TLS | HTTPS com verificação de certificado ligada; `http` só com `allow_http: true` |
+| RNF-03 | TLS | HTTPS com verificação de certificado ligada; `http` só em build `DEV=1`; partes fora de `UNX_ALLOWED_ARCHIVE_PREFIX` invalidam o manifest |
 | RNF-04 | Memória | Download e extração em streaming; uso de heap < 64 MB (funciona em modo applet) |
 | RNF-05 | Desempenho | O download é limitado pela rede, não pela escrita; a extração de 1 GB com muitos arquivos pequenos termina em tempo anotado no spike F0.3 |
 | RNF-06 | Robustez a energia | Um desligamento em qualquer etapa deixa um estado recuperável (download: retomar; aplicação: `APPLYING`) |

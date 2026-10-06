@@ -5,7 +5,7 @@ Dois artefatos distintos, com ciclos de release independentes:
 | Artefato | Onde vive | Tag | Quem consome |
 | --- | --- | --- | --- |
 | Homebrew `ultranx-nx.nro` | este repositório (`homebrew/`) | `homebrew-vX.Y.Z` | usuário instala uma vez; depois vem dentro do pacote |
-| Pacote R O X (partes `.zip` + `manifest.json`) | repositório público separado `OWNER/rox-pack` | `vX.Y.Z` | homebrew e app de PC, via manifest |
+| Pacote R O X (partes `.zip` + `manifest.json`) | repositório público separado `mathst/rox-pack` | `vX.Y.Z` | homebrew e app de PC, via manifest |
 
 O app de PC mantém o fluxo atual (`build.yml`, tags `v*`). A tag do homebrew
 usa prefixo próprio para não disparar o build do PC.
@@ -16,22 +16,22 @@ usa prefixo próprio para não disparar o build do PC.
 
 - Servidor HTTP local no PC servindo uma pasta com `manifest.json` e partes:
   `python -m http.server 8000 --directory ./release-out`.
-- No console, `sdmc:/ultranx-nx/config.json`:
+- Build de desenvolvimento `make DEV=1` e, no console,
+  `sdmc:/ultranx-nx/dev.json`:
 
   ```json
   { "manifest_url": "http://192.168.0.10:8000/manifest.json", "allow_http": true }
   ```
 
-  `allow_http` só vale para host de rede local (regra 4 de `data-model.md`
-  §Validação); fora disso, `http://` invalida o manifest.
+  O `.nro` de release ignora esse arquivo (não é compilado com `UNX_DEV_BUILD`).
 - Envio do `.nro` sem tirar o cartão: `nxlink -s ultranx-nx.nro` (Homebrew Menu
   com `Y` pressionado), que também espelha o `stdout` no terminal do PC.
 - SD de teste dedicado: nunca o cartão de uso diário (ver `testing.md` §E2E).
 
 ### Produção
 
-- `manifest_url` padrão embutido no build:
-  `https://github.com/OWNER/rox-pack/releases/latest/download/manifest.json`.
+- URL fixa no binário (`UNX_MANIFEST_URL` em `include/ultranx/build_config.h`):
+  `https://github.com/mathst/rox-pack/releases/latest/download/manifest.json`.
   O GitHub redireciona `latest/download/<arquivo>` para o asset da release
   marcada como *latest*. É uma URL estável que nunca muda entre versões.
 - As URLs das partes dentro do manifest apontam para a tag fixa
@@ -40,20 +40,14 @@ usa prefixo próprio para não disparar o build do PC.
 
 ## Configuração
 
-Resolução do endereço do manifest, da mais forte para a mais fraca (mesmo
-modelo de três camadas do PC, sem variável de ambiente, que não existe no
-console):
+Diferente do PC, o usuário final **não** configura nada: a URL do manifest e o
+prefixo autorizado das partes (`UNX_ALLOWED_ARCHIVE_PREFIX`) são constantes de
+`include/ultranx/build_config.h`. Quem controla o conteúdo é o dono de
+`mathst/rox-pack`; trocar o endereço exige build novo. Única exceção: build
+`DEV=1` (ver Desenvolvimento).
 
-1. `sdmc:/ultranx-nx/config.json` → `manifest_url`.
-2. Constante de build `ULTRANX_MANIFEST_URL` (Makefile, passada como
-   `-DULTRANX_MANIFEST_URL="..."`; sobrescrevível com
-   `make ULTRANX_MANIFEST_URL=...`).
-
-`config.json` inválido (JSON quebrado, URL fora das regras) é ignorado com
-aviso no log e na tela inicial, e cai na constante de build. Nunca trava o app.
-
-Versão do homebrew: `APP_VERSION` no Makefile, gravada no NACP do `.nro` e
-comparada com `min_updater` do manifest.
+Versão do homebrew: `UNX_APP_VERSION` em `build_config.h`, repassada ao NACP
+pelo Makefile e comparada com `min_updater` do manifest.
 
 ## CI (`.github/workflows/homebrew.yml`)
 
@@ -93,7 +87,7 @@ artefato e publica com `softprops/action-gh-release@v2` (mesmo padrão do
 
 ## Publicação do pacote R O X
 
-Repositório `OWNER/rox-pack`, **público**: o console baixa sem token. As partes
+Repositório `mathst/rox-pack`, **público**: o console baixa sem token. As partes
 nunca vão para o git, só para os assets da release (limite de 2 GB por asset).
 
 Passo a passo para publicar `1.5.0`:
@@ -108,7 +102,7 @@ Passo a passo para publicar `1.5.0`:
    python tools/make_release.py \
      --version 1.5.0 --released 2026-10-01 \
      --standard pack/standard --full pack/full \
-     --base-url https://github.com/OWNER/rox-pack/releases/download/v1.5.0 \
+     --base-url https://github.com/mathst/rox-pack/releases/download/v1.5.0 \
      --cleanup cleanup.json \
      --out release-out/
    ```
@@ -120,7 +114,7 @@ Passo a passo para publicar `1.5.0`:
 4. Publicar:
 
    ```bash
-   gh release create v1.5.0 --repo OWNER/rox-pack --latest \
+   gh release create v1.5.0 --repo mathst/rox-pack --latest \
      --title "R O X 1.5.0" --notes-file NOTES.md \
      release-out/*.zip release-out/manifest.json release-out/packetVersion.txt
    ```
@@ -129,7 +123,7 @@ Passo a passo para publicar `1.5.0`:
    só aparece como *latest* quando `gh release create` termina, o console nunca
    vê um manifest apontando para partes ainda em upload.
 5. Conferir:
-   `curl -sL https://github.com/OWNER/rox-pack/releases/latest/download/manifest.json`
+   `curl -sL https://github.com/mathst/rox-pack/releases/latest/download/manifest.json`
    retorna `"version": "1.5.0"`.
 
 O app de PC passa a apontar para a mesma URL. O `packetVersion.txt` anexado à
@@ -183,7 +177,7 @@ Sem telemetria e sem rede além do manifest e das partes. Tudo fica no SD:
 
 ### Pacote publicado com defeito
 
-1. Na `OWNER/rox-pack`, marcar a release anterior boa como *latest*:
+1. Na `mathst/rox-pack`, marcar a release anterior boa como *latest*:
    `gh release edit v1.4.2 --latest`. O `releases/latest/download/manifest.json`
    volta a apontar para ela imediatamente.
 2. Opcional: rebaixar a release ruim a *pre-release* ou apagá-la. As partes da
