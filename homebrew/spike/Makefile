@@ -40,7 +40,7 @@ export INCLUDE  := $(foreach dir,$(INCLUDES),-I$(CURDIR)/$(dir)) \
                    -I$(CURDIR)/$(BUILD)
 export LIBPATHS := $(foreach dir,$(LIBDIRS),-L$(dir)/lib)
 
-export APP_ICON := $(DEVKITPRO)/libnx/default_icon.jpg
+export APP_ICON := $(CURDIR)/../../logos/export/icon.jpg
 export NROFLAGS += --icon=$(APP_ICON) --nacp=$(CURDIR)/$(TARGET).nacp
 
 .PHONY: $(BUILD) clean all

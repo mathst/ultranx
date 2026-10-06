@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 512"><g id="icon" transform="translate(48 56) scale(0.78)"><rect width="512" height="512" rx="112" fill="#101826"/>
+<path d="M112 316 L256 392 L400 316" fill="none" stroke="#19D3C5" stroke-opacity="0.4" stroke-width="36" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M112 256 L256 332 L400 256" fill="none" stroke="#19D3C5" stroke-opacity="0.7" stroke-width="36" stroke-linecap="round" stroke-linejoin="round"/>
+<polygon points="256,112 400,190 256,268 112,190" fill="#19D3C5"/>
+<path d="M256 140 L300 186 H274 V226 H238 V186 H212 Z" fill="#FF5A5F"/>
+</g><g id="wordmark"><text x="520" y="292" font-family="Helvetica, Arial, sans-serif" font-weight="700" font-size="104" fill="#1B2A41">Ultra<tspan fill="#0FA89E">NX</tspan></text></g></svg>

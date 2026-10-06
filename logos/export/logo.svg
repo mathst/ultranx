@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 512"><g id="icon" transform="translate(48 56) scale(0.78)"><rect width="512" height="512" rx="112" fill="#101826"/>
+<path d="M150 96 H330 L394 160 V416 Q394 440 370 440 H150 Q126 440 126 416 V120 Q126 96 150 96 Z" fill="#19D3C5"/>
+<rect x="168" y="116" width="22" height="56" rx="6" fill="#101826"/>
+<rect x="204" y="116" width="22" height="56" rx="6" fill="#101826"/>
+<rect x="240" y="116" width="22" height="56" rx="6" fill="#101826"/>
+<rect x="276" y="116" width="22" height="56" rx="6" fill="#101826"/>
+<path d="M232 228 H280 V300 H324 L256 380 L188 300 H232 Z" fill="#FF5A5F"/>
+</g><g id="wordmark"><text x="520" y="292" font-family="Helvetica, Arial, sans-serif" font-weight="700" font-size="104" fill="#1B2A41">Ultra<tspan fill="#0FA89E">NX</tspan></text></g></svg>

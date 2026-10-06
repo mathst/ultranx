@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 512"><g id="icon" transform="translate(48 56) scale(0.78)"><rect width="512" height="512" rx="112" fill="#101826"/>
+<path d="M156 120 V280 A100 100 0 0 0 356 280 V120" fill="none" stroke="#19D3C5" stroke-width="72" stroke-linecap="round"/>
+<path d="M232 112 H280 V226 H320 L256 300 L192 226 H232 Z" fill="#FF5A5F"/>
+</g><g id="wordmark"><text x="520" y="292" font-family="Helvetica, Arial, sans-serif" font-weight="700" font-size="104" fill="#1B2A41">Ultra<tspan fill="#0FA89E">NX</tspan></text></g></svg>

@@ -3,3 +3,4 @@ build/
 *.nacp
 *.elf
 *.map
+out/

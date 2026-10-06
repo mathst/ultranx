@@ -4,6 +4,7 @@ on:
   push:
     paths:
       - "homebrew/**"
+      - "logos/export/icon.jpg"
       - ".github/workflows/homebrew.yml"
   workflow_dispatch:
 
