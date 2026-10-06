@@ -1,0 +1,28 @@
+name: homebrew
+
+on:
+  push:
+    paths:
+      - "homebrew/**"
+      - ".github/workflows/homebrew.yml"
+  workflow_dispatch:
+
+jobs:
+  spike:
+    runs-on: ubuntu-latest
+    container: devkitpro/devkita64:latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Portlibs
+        run: dkp-pacman -Sy --noconfirm --needed switch-curl switch-zlib
+
+      - name: Build spike
+        run: make -C homebrew/spike
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ultranx-spike
+          path: homebrew/spike/ultranx-spike.nro
+          if-no-files-found: error
