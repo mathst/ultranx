@@ -99,7 +99,9 @@ def test_choose_temp_dir_prefers_system_temp_when_it_has_room(monkeypatch, tmp_p
     assert installer._choose_temp_dir(sd_root, 1_000_000) == system_temp
 
 
-def test_choose_temp_dir_falls_back_to_sd_when_system_temp_is_tight(monkeypatch, tmp_path):
+def test_choose_temp_dir_falls_back_to_sd_when_system_temp_is_tight(
+    monkeypatch, tmp_path
+):
     sd_root = tmp_path / "sd"
     sd_root.mkdir()
     system_temp = tmp_path / "systemp"

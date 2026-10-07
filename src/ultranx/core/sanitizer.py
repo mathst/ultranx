@@ -16,6 +16,7 @@ Modelo de segurança em três camadas, aplicadas nesta ordem:
 from __future__ import annotations
 
 import logging
+import os
 import shutil
 import stat
 from collections.abc import Callable, Iterable
@@ -229,15 +230,27 @@ def _clear_readonly(path: Path) -> None:
     Isso barra a remoção com ``PermissionError`` mesmo com o processo tendo
     permissão de escrita plena no cartão — sem essa limpeza, um único arquivo
     read-only travaria a atualização inteira nessa etapa.
+
+    No POSIX, pasta "somente leitura" também perde o bit de busca (``x``), e aí
+    nem dá para listar o que tem dentro. Por isso o percurso é de cima para
+    baixo: cada pasta é liberada antes de o ``os.walk`` descer nela.
     """
-    candidates: Iterable[Path] = (*path.rglob("*"), path) if path.is_dir() else (path,)
-    for candidate in candidates:
-        try:
-            mode = candidate.stat().st_mode
-            if not mode & stat.S_IWRITE:
-                candidate.chmod(mode | stat.S_IWRITE)
-        except OSError:
-            pass
+    _make_writable(path)
+    if not path.is_dir():
+        return
+    for dirpath, dirnames, filenames in os.walk(path):
+        for name in (*dirnames, *filenames):
+            _make_writable(Path(dirpath, name))
+
+
+def _make_writable(candidate: Path) -> None:
+    try:
+        mode = candidate.stat().st_mode
+        wanted = stat.S_IWRITE | (stat.S_IEXEC if stat.S_ISDIR(mode) else 0)
+        if mode & wanted != wanted:
+            candidate.chmod(mode | wanted)
+    except OSError:
+        pass
 
 
 def _raise_removal_error(item: CleanupItem, exc: OSError) -> None:

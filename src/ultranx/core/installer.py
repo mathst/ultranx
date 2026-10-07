@@ -78,7 +78,8 @@ def _choose_temp_dir(sd_root: Path, expected_size: int | None) -> Path:
         return system_temp
     root = safe_resolve(sd_root)
     logger.info(
-        "Espaço insuficiente em %s para o temporário (%s necessários); usando o próprio SD.",
+        "Espaço insuficiente em %s para o temporário (%s necessários); "
+        "usando o próprio SD.",
         system_temp,
         human_size(needed),
     )
