@@ -8,6 +8,13 @@ Atmosphere inconsistente.
 Sem banco de dados: o estado fica no próprio cartão, no arquivo
 `packetVersion.txt` da raiz.
 
+> **Quer atualizar direto no console?** Use o
+> [UltraNX-NX](https://github.com/mathst/ultranx-nx), o app do Switch: instala
+> o `.nro`, abre e ele atualiza sozinho. Este app de PC é o **auxiliar** —
+> instala o `.nro` no cartão, atualiza sem Wi-Fi no console e recupera o cartão
+> se uma atualização pelo console for interrompida. Os dois leem o mesmo
+> pacote publicado em [`mathst/rox-pack`](https://github.com/mathst/rox-pack).
+
 ## O que ele faz
 
 1. **Detecta o cartão** — varre mídias removíveis FAT32/exFAT via `psutil`; se não
