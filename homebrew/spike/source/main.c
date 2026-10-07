@@ -23,7 +23,7 @@
 
 #include "miniz.h"
 
-#define SPIKE_VERSION "0.0.1"
+#define SPIKE_VERSION "0.0.2"
 #define SPIKE_DIR "sdmc:/ultranx-nx/spike"
 #define URL_FILE SPIKE_DIR "/url.txt"
 #define DL_FILE SPIKE_DIR "/download.zip"
@@ -374,11 +374,43 @@ static bool confirm(const char *question) {
     return false;
 }
 
+/* Mariko (Hoag/Iowa/Calcio/Aula) não tem reboot-to-payload: a IRAM não é
+ * executada no boot. Nele o caminho é reboot normal — o modchip carrega o
+ * hekate de novo. Só Erista (Icosa/Copper) aceita payload. */
+static bool is_mariko(void) {
+    u64 hw = 0;
+    Result rc = splInitialize();
+    if (R_SUCCEEDED(rc)) {
+        rc = splGetConfig(SplConfigItem_HardwareType, &hw);
+        splExit();
+    }
+    out("  hardware type = %llu (rc 0x%x) -> %s\n", (unsigned long long)hw, rc,
+        hw >= 2 ? "Mariko" : "Erista");
+    return R_SUCCEEDED(rc) && hw >= 2;
+}
+
+static void shutdown_reboot(void) {
+    out("  spsmInitialize...\n");
+    Result rc = spsmInitialize();
+    out("  spsmInitialize = 0x%x; spsmShutdown(true)\n", rc);
+    if (g_log)
+        fclose(g_log);
+    g_log = NULL;
+    curl_global_cleanup();
+    socketExit();
+    spsmShutdown(true);
+}
+
 static void test_reboot(void) {
     static u8 payload[IRAM_PAYLOAD_MAX_SIZE] __attribute__((aligned(0x1000)));
     out("\n[F0.4] reboot para payload\n");
     if (!hosversionIsAtmosphere()) {
         out("  sem Atmosphere: bpc:ams indisponivel\n");
+        return;
+    }
+    if (is_mariko()) {
+        if (confirm("  Mariko: reboot normal (modchip carrega o hekate)?"))
+            shutdown_reboot();
         return;
     }
     memset(payload, 0, sizeof(payload));
@@ -407,12 +439,7 @@ static void test_reboot(void) {
     if (R_FAILED(rc))
         return;
 
-    out("  reiniciando...\n");
-    if (g_log)
-        fclose(g_log);
-    g_log = NULL;
-    spsmInitialize();
-    spsmShutdown(true);
+    shutdown_reboot();
 }
 
 /* ------------------------------------------------------------------------ */
